@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environments
+.venv/
+env/
+ENV/
+venv/
+.venv/
+
+# VS Code
+.vscode/
+
+# OS X
+.DS_Store
+
+# Jupyter/IPython
+.ipynb_checkpoints/
+
+# Environment/config files
+.env
+
+# Mac Finder
+Icon?
+
+# Niet in repo:
+modelposes/

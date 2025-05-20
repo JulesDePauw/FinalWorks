@@ -1,0 +1,20 @@
+[
+  {
+    "pose": "StandingForwardFold",
+    "prep_time": 5,
+    "hold_time": 20,
+    "transition": "Rol langzaam omhoog naar Mountain Pose."
+  },
+  {
+    "pose": "MountainPose",
+    "prep_time": 5,
+    "hold_time": 15,
+    "transition": "Breng je armen omhoog en zak naar Chair Pose."
+  },
+  {
+    "pose": "ChairPose",
+    "prep_time": 5,
+    "hold_time": 25,
+    "transition": "Sta langzaam recht en sluit af met een diepe ademhaling."
+  }
+]
