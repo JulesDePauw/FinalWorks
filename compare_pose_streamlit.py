@@ -11,6 +11,7 @@ JOINT_RADIUS = 10
 LINE_THICKNESS = 5
 LINE_SEGMENTS = 10
 
+
 def generate_friendly_feedback(*args, **kwargs):
     return "🤖 Hier komt later AI-feedback voor deze gewrichtsafwijking!"
 
@@ -75,6 +76,7 @@ def run_camera_loop(
                 if not ret:
                     break
                 frame = cv2.flip(frame, 1)
+                
                 frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 camera_placeholder.image(frame_rgb, channels="RGB")
                 if timer_area:
@@ -95,6 +97,7 @@ def run_camera_loop(
                 if not ret:
                     break
                 frame = cv2.flip(frame, 1)
+                
                 h, w = frame.shape[:2]
                 rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 results = pose.process(rgb)
@@ -229,18 +232,72 @@ def run_camera_loop(
                 time.sleep(1 / 30)
 
             # === Overgang naar volgende ===
+            # Laad modellen van de volgende pose (indien beschikbaar)
+            next_angles = None
+            next_priority = {}
+            next_head_turn = None
+            next_label = None
+            if i + 1 < len(routine_steps):
+                with open(routine_steps[i+1]['pose_json']) as nf:
+                    next_json = json.load(nf)
+                next_angles = next_json.get('angles', {})
+                next_priority = next_json.get('priority', {})
+                next_head_turn = next_json.get('head_turn')
+                next_label = next_json.get('label', 'deze pose')
             transition_text = step.get("transition_text", "Bereid je voor op de volgende pose.")
-            for sec in range(5, 0, -1):
+            transition_time = 5
+            transition_start = time.time()
+            last_sec = -1
+            while True:
+                elapsed = time.time() - transition_start
+                sec = max(0, int(transition_time - elapsed))
+                if sec != last_sec:
+                    if timer_area:
+                        timer_area.markdown(f"🧭 **Overgang**: {transition_text} ({sec}s)")
+                    last_sec = sec
                 ret, frame = cap.read()
                 if not ret:
                     break
                 frame = cv2.flip(frame, 1)
+                h, w = frame.shape[:2]
+                # Converteer en teken skelet tegen volgende pose als beschikbaar
+                rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                results = pose.process(rgb)
+                if results.pose_landmarks and next_angles is not None:
+                    lm = results.pose_landmarks.landmark
+                    pose_px = {j: (int(lm[j].x * w), int(lm[j].y * h)) for j in range(len(lm))}
+                    virt = {}
+                    if 11 in pose_px and 12 in pose_px:
+                        virt['neck'] = midpoint(pose_px[11], pose_px[12])
+                    if 7 in pose_px and 8 in pose_px:
+                        virt['head'] = midpoint(pose_px[7], pose_px[8])
+                    if 23 in pose_px and 24 in pose_px:
+                        virt['hip_center'] = midpoint(pose_px[23], pose_px[24])
+                    def pt(x): return pose_px.get(x) if isinstance(x, int) else virt.get(x)
+                    for name, (a,b,c) in ANGLE_DEFINITIONS.items():
+                        pa, pb, pc = pt(a), pt(b), pt(c)
+                        if pa and pb and pc:
+                            angle = np.degrees(np.arccos(np.clip(np.dot(np.subtract(pa,pb), np.subtract(pc,pb)) /
+                                                               (np.linalg.norm(np.subtract(pa,pb))*np.linalg.norm(np.subtract(pc,pb))), -1.0,1.0)))
+                            model = next_angles.get(name + '_angle')
+                            if model is None: continue
+                            diff = abs(angle - model)
+                            norm = min(diff/MAX_ANGLE_DIFF,1.0)
+                            col = gradient_color(norm)
+                            # Teken gradient lijnen
+                            draw_gradient_line(frame, pa, pb, col, col, LINE_SEGMENTS, LINE_THICKNESS)
+                            draw_gradient_line(frame, pb, pc, col, col, LINE_SEGMENTS, LINE_THICKNESS)
+                            cv2.circle(frame, pa, JOINT_RADIUS, col, -1)
+                            cv2.circle(frame, pb, JOINT_RADIUS, col, -1)
+                            cv2.circle(frame, pc, JOINT_RADIUS, col, -1)
+                # Toon frame
                 frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 camera_placeholder.image(frame_rgb, channels="RGB")
-                if timer_area:
-                    timer_area.markdown(f"🧭 **Overgang**: {transition_text} ({sec}s)")
                 if feedback_text_area:
                     feedback_text_area.empty()
-                time.sleep(1)
+                if elapsed >= transition_time:
+                    break
+                time.sleep(1/15)  # 15 FPS
+  # 15 FPS, soepel maar weinig lag  # 10 FPS voor minimale lag
     finally:
         cap.release()
