@@ -2,19 +2,19 @@
   {
     "pose": "MountainPose",
     "prep_time": 5,
-    "hold_time": 15,
+    "hold_time": 10,
     "transition": "Breng je armen omhoog en maak je klaar voor de volgende pose."
   },
   {
     "pose": "TreePose",
     "prep_time": 5,
-    "hold_time": 20,
+    "hold_time": 10,
     "transition": "Laat je voet zakken en stap langzaam naar achter voor Warrior 1."
   },
   {
     "pose": "Warrior1",
     "prep_time": 5,
-    "hold_time": 30,
+    "hold_time": 10,
     "transition": "Keer terug naar Mountain Pose of sluit je oefening af met ontspanning."
   }
 ]

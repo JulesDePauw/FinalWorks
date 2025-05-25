@@ -1,0 +1,69 @@
+{
+  "English": {
+    "Female": [
+      {
+        "name": "Ava (Premium)",
+        "id": "com.apple.voice.premium.en-US.Ava",
+        "locale": "en_US"
+      },
+      {
+        "name": "Karen (Premium)",
+        "id": "com.apple.voice.premium.en-AU.Karen",
+        "locale": "en_AU"
+      },
+      {
+        "name": "Matilda (Premium)",
+        "id": "com.apple.voice.premium.en-AU.Matilda",
+        "locale": "en_AU"
+      },
+      {
+        "name": "Sangeeta (Enhanced)",
+        "id": "com.apple.voice.enhanced.en-IN.Sangeeta",
+        "locale": "en_IN"
+      }
+    ],
+    "Male": [
+      {
+        "name": "Evan (Enhanced)",
+        "id": "com.apple.voice.enhanced.en-US.Evan",
+        "locale": "en_US"
+      },
+      {
+        "name": "Lee (Premium)",
+        "id": "com.apple.voice.premium.en-AU.Lee",
+        "locale": "en_AU"
+      },
+      {
+        "name": "Jamie (Premium)",
+        "id": "com.apple.voice.premium.en-GB.Malcolm",
+        "locale": "en_GB"
+      },
+      {
+        "name": "Nathan (Enhanced)",
+        "id": "com.apple.voice.enhanced.en-US.Nathan",
+        "locale": "en_US"
+      }
+    ]
+  },
+  "Dutch": {
+    "Female": [
+      {
+        "name": "Ellen (Enhanced)",
+        "id": "com.apple.voice.enhanced.nl-BE.Ellen",
+        "locale": "nl_BE"
+      },
+      {
+        "name": "Claire (Enhanced)",
+        "id": "com.apple.voice.enhanced.nl-NL.Claire",
+        "locale": "nl_NL"
+      }
+    ],
+    "Male": [
+      {
+        "name": "Xander (Enhanced)",
+        "id": "com.apple.voice.enhanced.nl-NL.Xander",
+        "locale": "nl_NL"
+      }
+    ]
+  }
+}
