@@ -1,0 +1,26 @@
+{
+  "title": "Deep Hip Opener",
+  "description": "Open your hips with deep stretches and poses.",
+  "thumbnail": "Piggeon.jpg",
+  "difficulty": "Advanced",
+  "poses": [
+    {
+      "pose": "Piggeon",
+      "prep_time": 5,
+      "hold_time": 10,
+      "transition": "Rise up and step into Warrior1."
+    },
+    {
+      "pose": "Warrior1",
+      "prep_time": 5,
+      "hold_time": 8,
+      "transition": "Sweep your arm up and return to MountainPose."
+    },
+    {
+      "pose": "Triangle",
+      "prep_time": 5,
+      "hold_time": 8,
+      "transition": "Repeat on the other side or end the routine."
+    }
+  ]
+}

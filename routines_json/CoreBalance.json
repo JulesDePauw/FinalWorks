@@ -1,0 +1,38 @@
+{
+  "title": "Core & Balance",
+  "description": "Strengthen your core and balance with dynamic postures.",
+  "thumbnail": "BoatPose.jpg",
+  "difficulty": "Intermediate",
+  "poses": [
+    {
+      "pose": "BoatPose",
+      "prep_time": 5,
+      "hold_time": 10,
+      "transition": "Lower yourself slowly into LowLunge."
+    },
+    {
+      "pose": "LowLunge",
+      "prep_time": 5,
+      "hold_time": 5,
+      "transition": "Twist into ReverseWarrior."
+    },
+    {
+      "pose": "ReverseWarrior",
+      "prep_time": 5,
+      "hold_time": 5,
+      "transition": "Bring your foot forward for GoddessPose."
+    },
+    {
+      "pose": "GoddessPose",
+      "prep_time": 5,
+      "hold_time": 8,
+      "transition": "Straighten your standing leg for Triangle."
+    },
+    {
+      "pose": "Triangle",
+      "prep_time": 5,
+      "hold_time": 8,
+      "transition": "Step back into MountainPose."
+    }
+  ]
+}

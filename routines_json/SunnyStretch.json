@@ -1,0 +1,32 @@
+{
+  "title": "Sunny Stretch",
+  "description": "Warm up and increase flexibility with Sun Salutation variations.",
+  "thumbnail": "DownwardDog.jpg",
+  "difficulty": "Intermediate",
+  "poses": [
+    {
+      "pose": "MountainPose",
+      "prep_time": 5,
+      "hold_time": 5,
+      "transition": "Fold forward into ForwardFold."
+    },
+    {
+      "pose": "DownwardDog",
+      "prep_time": 5,
+      "hold_time": 5,
+      "transition": "Step forward into Cobra."
+    },
+    {
+      "pose": "Cobra",
+      "prep_time": 5,
+      "hold_time": 5,
+      "transition": "Push your hips up towards DownwardDog."
+    },
+    {
+      "pose": "Warrior2",
+      "prep_time": 5,
+      "hold_time": 5,
+      "transition": "Return to MountainPose or repeat on the other side."
+    }
+  ]
+}

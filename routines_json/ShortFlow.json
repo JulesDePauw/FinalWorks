@@ -1,0 +1,26 @@
+{
+  "title": "Short Flow",
+  "description": "A simple three-pose routine to start your day calmly.",
+  "thumbnail": "TreePose.jpg",
+  "difficulty": "Beginner",
+  "poses": [
+    {
+      "pose": "MountainPose",
+      "prep_time": 5,
+      "hold_time": 5,
+      "transition": "Lift your arms and prepare for the next pose."
+    },
+    {
+      "pose": "TreePose",
+      "prep_time": 5,
+      "hold_time": 5,
+      "transition": "Lower your foot and slowly step back into Warrior1."
+    },
+    {
+      "pose": "Warrior1",
+      "prep_time": 5,
+      "hold_time": 5,
+      "transition": "Return to MountainPose or finish with a relaxation."
+    }
+  ]
+}

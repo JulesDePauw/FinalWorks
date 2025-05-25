@@ -38,15 +38,15 @@ def start_routine():
     # Laad geselecteerde routine JSON
     routine_file = os.path.join(ROUTINE_DIR, st.session_state.selected)
     data = json.load(open(routine_file))
-    # Splits metadata en poses-lijst
+    # Sla poses en metadata op
+    st.session_state.poses = data.get('poses', [])
     st.session_state.routine_meta = {
         'title': data.get('title'),
         'description': data.get('description'),
         'thumbnail': data.get('thumbnail'),
         'difficulty': data.get('difficulty')
     }
-    st.session_state.poses = data.get('poses', [])
-    # Start status
+    # Init status
     st.session_state.running = True
     st.session_state.current_step = 0
     st.session_state.prev_step = None
@@ -54,19 +54,27 @@ def start_routine():
     st.session_state.phase_start = time.time()
     st.session_state.score_log = {}
     st.session_state.final_results_shown = False
-    # Initialiseer camera
+    # Camera opstarten
     if 'cap' in st.session_state:
         st.session_state.cap.release()
     st.session_state.cap = cv2.VideoCapture(0)
-    # Bepaal crop target aan de hand van eerste pose
+    # Bepaal crop-target van eerste pose
     if st.session_state.poses:
         first_pose = st.session_state.poses[0]
-        first_img = f"modelposes/{first_pose['pose']}.jpg"
+        first_img = first_pose.get('image_path', f"modelposes/{first_pose['pose']}.jpg")
         img0 = cv2.imread(first_img)
         st.session_state.img_shape = img0.shape[:2] if img0 is not None else None
 
+# Callback voor selectieknop
+def on_select(fn):
+    st.session_state.selected = fn
+    start_routine()
+def on_select(fn):
+    st.session_state.selected = fn
+    start_routine()
+
 # Init session_state defaults
-:
+def init_state():
     if 'pose_models' not in st.session_state:
         load_models()
         st.session_state.running = False
@@ -78,48 +86,42 @@ def start_routine():
         st.session_state.score_log = {}
         st.session_state.final_results_shown = False
         st.session_state.selected = None
+        st.session_state.poses = []
 
+# Roep init_state() aan
 init_state()
 
-# Als nog niet gestart, toon enkel selectiepagina
+# SELECTIESCHERM: toon alleen zolang de routine niet draait: toon alleen zolang de routine niet draait
 if not st.session_state.running:
-    st.title("Kies een yoga-routine:")
+    sel_container = st.container()
+    sel_container.title("Kies een yoga-routine:")
     routines = [f for f in os.listdir(ROUTINE_DIR) if f.endswith('.json')]
-    # Laad metadata
     meta = {fn: json.load(open(os.path.join(ROUTINE_DIR, fn))) for fn in routines}
-    sel = st.selectbox(
-        "Selecteer routine", routines,
-        format_func=lambda x: meta[x]['title']
-    )
-    st.session_state.selected = sel
-    # Toon thumbnail en informatie
-    info = meta[sel]
-    if info.get('thumbnail'):
-        img_path = os.path.join('modelposes', info['thumbnail'])
-        if os.path.exists(img_path):
-            st.image(img_path, use_container_width=True)
-    total_sec = sum(p['prep_time']+p['hold_time'] for p in info['poses'])
-    mins, secs = divmod(total_sec, 60)
-    st.markdown(f"**Duur:** {mins}m {secs}s")
-    st.markdown(f"**Beschrijving:** {info.get('description','')}" )
-    diff = info.get('difficulty','Beginner')
-    levels = {'Beginner':1/3,'Intermediate':2/3,'Advanced':1}
-    st.markdown(f"**Moeilijkheid:** {diff}")
-    st.progress(levels.get(diff,0.3))
-    if st.button("Start routine"):
-        start_routine()
+    for fn in routines:
+        cols = sel_container.columns(2)
+        data = meta[fn]
+        with cols[0]:
+            thumb = data.get('thumbnail')
+            if thumb and os.path.exists(os.path.join('modelposes', thumb)):
+                st.image(os.path.join('modelposes', thumb), use_container_width=True)
+        with cols[1]:
+            st.subheader(data.get('title', fn))
+            total = sum(p['prep_time'] + p['hold_time'] for p in data.get('poses', []))
+            m, s = divmod(total, 60)
+            st.write(f"**Duur:** {m}m {s}s")
+            st.write(f"**Beschrijving:** {data.get('description','')}")
+            if st.button(f"Start {data.get('title', fn)}", key=fn, on_click=on_select, args=(fn,)):
+                sel_container.empty()
     st.stop()
 
 # Zodra gestart, toon twee kolommen voor camera en metrics
 col1, col2 = st.columns(2)
+# Placeholder in kolom 1 voor modelpose
+pose_ph = col1.empty()
 
-# Kolom 1: modelpose tijdens de routine
-with col1:
-    step = st.session_state.poses[st.session_state.current_step]
-    pose_name = step['pose']
-    st.markdown(f"📌 **Model pose:** {pose_name}")
-    img_path = step.get('image_path', f"modelposes/{pose_name}.jpg")
-    st.image(img_path, use_container_width=True)
+# Kolom 2: camera en metrics
+# Placeholder in kolom 1 voor modelpose
+pose_ph = col1.empty()
 
 # Kolom 2: camera en metrics
 with col2:
@@ -137,7 +139,7 @@ if st.session_state.running and st.session_state.poses:
         idx = st.session_state.current_step
         # Update modelpose alleen bij step change
         if st.session_state.prev_step != idx:
-            step = st.session_state.routine[idx]
+            step = st.session_state.poses[idx]
             pose_name = step['pose']
             pose_ph.markdown(f"📌 **Model pose:** {pose_name}")
             pose_ph.image(step.get('image_path', f"modelposes/{pose_name}.jpg"), use_container_width=True)
@@ -182,7 +184,7 @@ if st.session_state.running and st.session_state.poses:
         fps = 1/(t1-t0) if t1>t0 else 0; elapsed = time.time()-st.session_state.phase_start
         if st.session_state.phase=='prepare':
             rem = step.get('prep_time',5)-elapsed
-            tr = (st.session_state.routine[idx-1].get('transition','Neem houding aan.') if idx>0 else 'Neem houding aan.')
+            tr = (st.session_state.poses[idx-1].get('transition','Neem houding aan.') if idx>0 else 'Neem houding aan.')
             phase_text = f"🔄 Voorbereiding: {int(rem)} s — {tr}"
         elif st.session_state.phase=='hold':
             rem = step.get('hold_time',30)-elapsed
@@ -197,10 +199,10 @@ if st.session_state.running and st.session_state.poses:
             st.session_state.phase='transition'; st.session_state.phase_start=now
         elif st.session_state.phase=='transition':
             st.session_state.current_step +=1
-            if st.session_state.current_step>=len(st.session_state.routine):
+            if st.session_state.current_step>=len(st.session_state.poses):
                 st.session_state.running=False
             else:
-                nxt = st.session_state.routine[st.session_state.current_step]
+                nxt = st.session_state.poses[st.session_state.current_step]
                 img_n = cv2.imread(nxt.get('image_path', f"modelposes/{nxt['pose']}.jpg"))
                 if img_n is not None: target = img_n.shape[:2]
                 st.session_state.phase='prepare'; st.session_state.phase_start=now
@@ -211,34 +213,37 @@ if st.session_state.running and st.session_state.poses:
 if not st.session_state.running and not st.session_state.final_results_shown and any(st.session_state.score_log.values()):
     frame_ph.empty(); title_ph.empty(); metrics_ph.empty(); pose_ph.empty()
     for pose_name, scores in st.session_state.score_log.items():
-        # kolommen
+        # kolommen voor eindresultaten
         img_col, plot_col = st.columns([1,1])
         # model afbeelding links
         with img_col:
-            model_img = next((s.get('image_path', f"modelposes/{pose_name}.jpg") for s in st.session_state.routine if s.get('pose')==pose_name), f"modelposes/{pose_name}.jpg")
-            if model_img:
+            model_img = next(
+                (
+                    s.get('image_path', f"modelposes/{pose_name}.jpg")
+                    for s in st.session_state.poses if s.get('pose')==pose_name
+                ),
+                f"modelposes/{pose_name}.jpg"
+            )
+            if model_img and os.path.exists(model_img):
                 st.image(model_img, use_container_width=True)
-        # grafiek + titel en stats rechts
+        # grafiek en stats rechts
         with plot_col:
             st.markdown(f"### {pose_name}")
-            # figuur met achtergrond
             fig, ax = plt.subplots(figsize=(4,2), facecolor="#FFFBF2")
             ax.set_facecolor("#FFFBF2")
             times = np.linspace(0, len(scores)/30, len(scores))
             ax.plot(times, scores)
-            # as settings: geen x-ticks, y-ticks met %
             ax.set_xticks([])
-            yt = ax.get_yticks()
-            ax.set_yticklabels([f"{int(v)}%" for v in yt])
+            yticks = ax.get_yticks()
+            ax.set_yticklabels([f"{int(v)}%" for v in yticks])
             ax.set_ylim(0,100)
-            # geen spines aan de rechter en bovenkant
             ax.spines['top'].set_visible(False)
             ax.spines['right'].set_visible(False)
             st.pyplot(fig)
-            # stats onder
-            top = max(scores); avg = sum(scores)/len(scores)
+            top = max(scores)
+            avg = sum(scores)/len(scores)
             st.markdown(
-                f"**Topscore:** {top:.1f}%  **Gem.score:** {avg:.1f}%"
+                f"**Topscore:** {top:.1f}%  **Gem.score:** {avg:.1f}%  "
                 f"**Feedback:** Placeholder feedback."
             )
     st.session_state.final_results_shown = True
