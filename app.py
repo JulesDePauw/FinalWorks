@@ -161,12 +161,10 @@ if st.session_state.running and st.session_state.poses:
                 new_h = int(w * (th/tw)); y0 = (h-new_h)//2
                 frame = frame[y0:y0+new_h, :]
         # Render & score
-        mode = 'full' if st.session_state.phase=='hold' else 'light'
+        mode = 'full'  # Always use full mediapipe model
         t0 = time.time()
         annotated, score = render_skeleton_frame(
-            frame.copy(),
-            st.session_state.pose_models.get(f"{pose_name}.json", {}),
-            mode=mode
+            frame.copy(), st.session_state.pose_models.get(f"{pose_name}.json", {}), mode='full'  # Always full model
         )
         t1 = time.time()
         if score is not None:
@@ -247,3 +245,12 @@ if not st.session_state.running and not st.session_state.final_results_shown and
                 f"**Feedback:** Placeholder feedback."
             )
     st.session_state.final_results_shown = True
+    # Knop om terug te keren naar routine-selectie
+    if st.button("⇦ Kies een andere routine"):
+        # Reset state
+        st.session_state.running = False
+        st.session_state.selected = None
+        st.session_state.poses = []
+        st.session_state.final_results_shown = False
+        # Stop hier zodat selectie opnieuw getoond wordt
+        st.stop()
