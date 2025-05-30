@@ -99,47 +99,75 @@ def render_skeleton_frame(frame, model_json, mode="full"):
         virtual_joints['hip_center'] = midpoint(pose_px[23], pose_px[24])
     def get_coord(x):
         return pose_px.get(x) if isinstance(x, int) else virtual_joints.get(x)
+
     raw_colors = {}
     total_diff, counted = 0, 0
-    if mode == "full" and results.pose_landmarks:
+    if mode == "full":
         for name, (a, b, c) in ANGLE_DEFINITIONS.items():
             pa, pb, pc = get_coord(a), get_coord(b), get_coord(c)
-            if pa and pb and pc:
+            if pa is not None and pb is not None and pc is not None:
                 angle = calculate_angle(pa, pb, pc)
                 model = model_json.get('angles', {}).get(name + '_angle', angle)
                 diff = abs(angle - model)
                 norm = min(diff / MAX_ANGLE_DIFF, 1.0)
-                col = gradient_color(norm)
-                for j in (a, b, c): raw_colors.setdefault(j, []).append(col)
-                total_diff += norm; counted += 1
-    joint_colors = {j: tuple(int(np.mean([c[i] for c in clist])) for i in range(3)) for j, clist in raw_colors.items()} if raw_colors else {}
-    links = [('head','neck'), ('neck',11), ('neck',12), (11,13),(13,15),(12,14),(14,16), ('neck','hip_center'),('hip_center',23),('hip_center',24), (23,25),(25,27),(24,26),(26,28)]
+            else:
+                # Ontbrekende keypoints: maximale afwijking
+                norm = 1.0
+            col = gradient_color(norm)
+            raw_colors.setdefault(b, []).append(col)
+            total_diff += norm
+            counted += 1
+
+    joint_colors = {}
+    for j, clist in raw_colors.items():
+        avg_col = tuple(int(np.mean([c[i] for c in clist])) for i in range(3))
+        joint_colors[j] = avg_col
+
+    links = [('head','neck'), ('neck',11), ('neck',12), (11,13),(13,15),(12,14),(14,16),
+             ('neck','hip_center'),('hip_center',23),('hip_center',24),
+             (23,25),(25,27),(24,26),(26,28)]
     for p1, p2 in links:
         pt1, pt2 = get_coord(p1), get_coord(p2)
         if pt1 and pt2:
-            draw_gradient_line(frame, pt1, pt2, joint_colors.get(p1,(200,200,200)), joint_colors.get(p2,(200,200,200)))
-    last_render, last_score = frame, (0 if counted==0 else max(0, int((1-total_diff/counted)*100)))
+            draw_gradient_line(frame, pt1, pt2,
+                               joint_colors.get(p1, (200,200,200)),
+                               joint_colors.get(p2, (200,200,200)))
+
+    # Bereken score veilig, voorkom NaN
+    if counted == 0:
+        score = 0
+    else:
+        pct = (1 - total_diff / counted) * 100
+        if np.isnan(pct):
+            score = 0
+        else:
+            score = max(0, int(pct))
+    last_render, last_score = frame, score
     return last_render, last_score
 
 # === Feedback loop ===
 def run_streamlit_feedback(modelpath, frame_ph, hold_time=30, feedback_text_area=None, timer_area=None):
-    """Laat de gebruiker een houding vasthouden en toon AI-feedback."""
-    with open(modelpath) as f: model_json = json.load(f)
+    with open(modelpath) as f:
+        model_json = json.load(f)
     cap = cv2.VideoCapture(0)
     start = time.time(); scores = []
     while True:
         elapsed = time.time() - start
-        if elapsed >= hold_time: break
+        if elapsed >= hold_time:
+            break
         ret, frame = cap.read()
-        if not ret: break
+        if not ret:
+            break
         frame = cv2.flip(frame, 1)
         annotated, score = render_skeleton_frame(frame.copy(), model_json, mode='full')
         scores.append(score or 0)
         frame_ph.image(annotated, channels='BGR', use_container_width=True)
-        if timer_area: timer_area.markdown(f"⏳ {int(hold_time-elapsed)} s")
+        if timer_area:
+            timer_area.markdown(f"⏳ {int(hold_time - elapsed)} s")
         time.sleep(0.03)
     cap.release()
-    avg_score = sum(scores)/len(scores) if scores else 0
+    avg_score = sum(scores) / len(scores) if scores else 0
     feedback = f"Je gemiddeldescore was {avg_score:.1f}%"
-    if feedback_text_area: feedback_text_area.markdown(f"**Feedback:** {feedback}")
+    if feedback_text_area:
+        feedback_text_area.markdown(f"**Feedback:** {feedback}")
     return avg_score
