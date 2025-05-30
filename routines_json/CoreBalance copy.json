@@ -1,0 +1,26 @@
+{
+  "title": "Core & Balance2",
+  "description": "Strengthen your core and balance with dynamic postures.",
+  "thumbnail": "BoatPose.jpg",
+  "difficulty": "Intermediate",
+  "poses": [
+    {
+      "pose": "MountainPose",
+      "prep_time": 5,
+      "hold_time": 30,
+      "transition": "Lift your arms and prepare for the next pose."
+    },
+    {
+      "pose": "TreePose",
+      "prep_time": 5,
+      "hold_time": 30,
+      "transition": "Lower your foot and slowly step back into Warrior1."
+    },
+    {
+      "pose": "Warrior1",
+      "prep_time": 5,
+      "hold_time": 30,
+      "transition": "Return to MountainPose or finish with a relaxation."
+    }
+  ]
+}
