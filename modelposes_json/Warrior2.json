@@ -1,8 +1,12 @@
 {
   "filename": "Warrior2.jpg",
   "label": "Warrior2",
-  "description": "Warrior II pose strengthens the legs and hips while stretching the chest and shoulders. Engage your core and focus on proper alignment for a balanced flow.",
-  "priority": {},
+  "description": "Warrior II pose involves standing with feet wide apart, parallel to each other, and facing forward. Engages hips, inner thighs and arms.",
+  "priority": {
+    "left_knee_angle": 8,
+    "right_knee_angle": 7,
+    "head_angle": 9
+  },
   "keypoints": {
     "nose": {
       "x": 0.5970767736434937,
@@ -149,5 +153,5 @@
     "left_ankle_angle": 135.6,
     "right_ankle_angle": 173.2
   },
-  "head_turn": 0.031
+  "head_angle": 81.4
 }

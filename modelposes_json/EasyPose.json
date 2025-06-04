@@ -1,11 +1,10 @@
 {
   "filename": "EasyPose.jpg",
   "label": "EasyPose",
-  "description": "Relax your body in this easy yoga pose, focusing on breath and comfort.",
+  "description": "The easy pose is an foundational yoga posture that involves stretching the body forward, lengthening the spine, and opening the chest. It is typically done on a mat on the ground.",
   "priority": {
-    "left_knee_angle": 4,
-    "head_turn": 6,
-    "spine_lengthen": 8
+    "left_knee_angle": 8,
+    "head_angle": 9
   },
   "keypoints": {
     "nose": {
@@ -153,5 +152,5 @@
     "left_ankle_angle": 147.5,
     "right_ankle_angle": 162.5
   },
-  "head_turn": -0.0
+  "head_angle": -3.0
 }

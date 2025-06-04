@@ -1,10 +1,12 @@
 {
   "filename": "DownwardDog.jpg",
   "label": "DownwardDog",
-  "description": "Downward dog is a foundational standing yoga pose. It stretches the hamstrings, calves, and spine.",
+  "description": "Downward Dog is a foundational pose that stretches the hamstrings, calves, and spine. Engage your core to maintain alignment and balance.",
   "priority": {
-    "left_knee_angle": 9,
-    "head_turn": 5
+    "left_knee_angle": 8,
+    "right_knee_angle": 9,
+    "left_hip_angle": 6,
+    "head_angle": 7
   },
   "keypoints": {
     "nose": {
@@ -152,5 +154,5 @@
     "left_ankle_angle": 123.3,
     "right_ankle_angle": 126.5
   },
-  "head_turn": 0.009
+  "head_angle": 17.3
 }

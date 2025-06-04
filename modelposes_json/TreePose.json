@@ -1,10 +1,12 @@
 {
   "filename": "TreePose.jpg",
   "label": "TreePose",
-  "description": "Tree pose is a standing balance pose that challenges the ankle strength, calf stability, and engagement of core muscles. Focus on grounding yourself with one foot while stretching your arms towards the ceiling.",
+  "description": "Tree pose engages the ankles muscles while challenging balance and focus.",
   "priority": {
-    "left_knee_angle": 6,
-    "head_turn": 5
+    "left_knee_angle": 8,
+    "right_knee_angle": 9,
+    "head_angle": 6,
+    "right_heel_touch": 10
   },
   "keypoints": {
     "nose": {
@@ -152,5 +154,5 @@
     "left_ankle_angle": 179.8,
     "right_ankle_angle": 106.4
   },
-  "head_turn": -0.001
+  "head_angle": -13.0
 }

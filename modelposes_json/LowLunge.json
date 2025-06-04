@@ -1,11 +1,11 @@
 {
   "filename": "LowLunge.jpg",
   "label": "LowLunge",
-  "description": "Stretches the hip flexor and quadriceps while calming the nervous system.",
+  "description": "Lowlunge is a standing yoga pose that stretches the front of the leg and opens the chest. It can help alleviate tension in the thighs and groin area.",
   "priority": {
     "left_knee_angle": 8,
-    "right_hip_level": 6,
-    "head_turn": 9
+    "left_ankle_angle": 5,
+    "head_angle": 7
   },
   "keypoints": {
     "nose": {
@@ -153,5 +153,5 @@
     "left_ankle_angle": 163.5,
     "right_ankle_angle": 146.0
   },
-  "head_turn": -0.015
+  "head_angle": -138.8
 }

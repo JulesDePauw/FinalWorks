@@ -1,10 +1,13 @@
 {
   "filename": "Goddes.jpg",
   "label": "Goddes",
-  "description": "The Goddess pose is a seated backbend that strengthens the back muscles and stretches the chest.",
+  "description": "The Goddess pose is a seated forward fold that targets the hamstrings, calves, and back muscles.",
   "priority": {
     "left_knee_angle": 8,
-    "head_turn": 6
+    "right_knee_angle": 7,
+    "left ankle_angle": 6,
+    "head_angle": 9,
+    "spine_angle": 5
   },
   "keypoints": {
     "nose": {
@@ -152,5 +155,5 @@
     "left_ankle_angle": 142.3,
     "right_ankle_angle": 130.7
   },
-  "head_turn": -0.001
+  "head_angle": -13.9
 }

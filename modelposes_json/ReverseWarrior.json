@@ -1,11 +1,11 @@
 {
   "filename": "ReverseWarrior.jpg",
   "label": "ReverseWarrior",
-  "description": "Reverse Warrior: A foundational standing pose that stretches the hamstrings and hip flexors while strengthening the ankles and calves.",
+  "description": "Reverse Warrior is a standing pose that stretches the hips, thighs, and spine.\nIt also helps in calming the mind and improving flexibility.",
   "priority": {
-    "left_hip_angle": 6,
-    "right_knee_angle": 8,
-    "head_position": 4
+    "left_knee_angle": 8,
+    "right_knee_angle": 2,
+    "head_angle": 6
   },
   "keypoints": {
     "nose": {
@@ -153,5 +153,5 @@
     "left_ankle_angle": 137.9,
     "right_ankle_angle": 152.4
   },
-  "head_turn": -0.001
+  "head_angle": -178.7
 }

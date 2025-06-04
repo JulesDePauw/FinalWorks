@@ -21,16 +21,31 @@ def calculate_angle(a, b, c):
     magnitude = (math.hypot(*ba) * math.hypot(*bc))
     if magnitude == 0:
         return 0.0
-    angle_rad = math.acos(dot_product / magnitude)
+    cos_val = dot_product / magnitude
+    cos_val = min(1.0, max(-1.0, cos_val))
+    angle_rad = math.acos(cos_val)
     return math.degrees(angle_rad)
 
-def calculate_head_turn(keypoints):
+def calculate_head_angle(keypoints):
+    """
+    Berekent de hoek van het hoofd door de lijn van het midden tussen de oren
+    naar de neus te vergelijken met de verticale as.
+    Retourneert de hoek in graden (0° betekent recht vooruit kijken,
+    positieve waarde betekent neus naar rechts).
+    """
     try:
-        left = keypoints["left_ear"]["x"]
-        right = keypoints["right_ear"]["x"]
-        nose = keypoints["nose"]["x"]
-        center = (left + right) / 2
-        return round(nose - center, 3)
+        left = keypoints["left_ear"]
+        right = keypoints["right_ear"]
+        nose = keypoints["nose"]
+        # Bereken midden tussen beide oren
+        center_x = (left["x"] + right["x"]) / 2
+        center_y = (left["y"] + right["y"]) / 2
+        dx = nose["x"] - center_x
+        dy = nose["y"] - center_y
+        # Hoek ten opzichte van verticale: arctan2(dx, dy)
+        # (we gebruiken dx, dy zodat 0° = recht naar voren, positief = naar rechts)
+        angle_rad = math.atan2(dx, dy)
+        return round(math.degrees(angle_rad), 1)
     except KeyError:
         return None
 
@@ -39,8 +54,8 @@ def get_pose_description_and_priority(label):
     system_msg = "Je bent een yogacoach."
     user_prompt = f"""
 Provide a JSON object for the yoga pose '{pose_name}' with two fields:
-1. \"description\": a short description of the pose (max 2 sentences)
-2. \"joint_priority\": a dictionary with joint angles (e.g. 'left_knee_angle', 'head_turn') and a priority score from 1 to 10.
+1. "description": a short description of the pose (max 2 sentences)
+2. "joint_priority": a dictionary with joint angles (e.g. 'left_knee_angle', 'head_angle') and a priority score from 1 to 10.
 
 Respond with only valid JSON. Do not include explanations, formatting notes, or any other text.
 """
@@ -106,7 +121,8 @@ for filename in os.listdir(INPUT_FOLDER):
     angle_of("left_knee", "left_ankle", "left_foot_index", "left_ankle_angle")
     angle_of("right_knee", "right_ankle", "right_foot_index", "right_ankle_angle")
 
-    head_turn = calculate_head_turn(keypoints)
+    # Voeg hier de hoofdhoek toe
+    head_angle = calculate_head_angle(keypoints)
 
     label = os.path.splitext(filename)[0]
     description, joint_priority = get_pose_description_and_priority(label)
@@ -118,7 +134,7 @@ for filename in os.listdir(INPUT_FOLDER):
         "priority": dict(joint_priority),
         "keypoints": keypoints,
         "angles": angles,
-        "head_turn": head_turn
+        "head_angle": head_angle
     }
 
     out_path = os.path.join(OUTPUT_FOLDER, f"{label}.json")

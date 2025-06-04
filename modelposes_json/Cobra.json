@@ -1,11 +1,12 @@
 {
   "filename": "Cobra.jpg",
   "label": "Cobra",
-  "description": "Cobra pose is a backbend that stretches the chest and strengthens the back muscles. It can help improve flexibility in the neck and shoulders.",
+  "description": "Cobra pose is a backbend that stretches the chest and opens up the shoulders. It strengthens the back muscles and improves flexibility in the neck.",
   "priority": {
-    "left_knee_angle": 6,
-    "head_turn": 8,
-    "shoulder_down_pressure": 4
+    "left_knee_angle": 8,
+    "head_angle": 7,
+    "spine_angle": 10,
+    "shoulder_angle": 6
   },
   "keypoints": {
     "nose": {
@@ -153,5 +154,5 @@
     "left_ankle_angle": 147.0,
     "right_ankle_angle": 145.2
   },
-  "head_turn": -0.02
+  "head_angle": -67.0
 }

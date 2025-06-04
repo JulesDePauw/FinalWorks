@@ -1,11 +1,13 @@
 {
   "filename": "Dancer.jpg",
   "label": "Dancer",
-  "description": "Dancer pose is a variation of the warrior II pose where one leg is bent in front of you and the back leg is extended behind you.",
+  "description": "A dynamic pose that stretches and warms the entire body, mimicking the movements of a dancer.",
   "priority": {
     "left_knee_angle": 8,
-    "head_turn": 9,
-    "right_ankle_angle": 7
+    "head_angle": 6,
+    "spine_extension": 9,
+    "right_ankle_angle": 7,
+    "shoulder_roll": 5
   },
   "keypoints": {
     "nose": {
@@ -153,5 +155,5 @@
     "left_ankle_angle": 125.9,
     "right_ankle_angle": 168.2
   },
-  "head_turn": -0.023
+  "head_angle": -61.0
 }

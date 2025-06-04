@@ -1,13 +1,10 @@
 {
   "filename": "BoatPose.jpg",
   "label": "BoatPose",
-  "description": "Engage your core, lift your legs and straighten your arms in this inverted balance pose.",
+  "description": "A foundational balance pose that targets the core and ankles.",
   "priority": {
     "left_knee_angle": 8,
-    "right_knee_angle": 7,
-    "hips_position": 9,
-    "head_turn": 6,
-    "spine_extension": 10
+    "head_angle": 9
   },
   "keypoints": {
     "nose": {
@@ -155,5 +152,5 @@
     "left_ankle_angle": 157.8,
     "right_ankle_angle": 151.6
   },
-  "head_turn": -0.034
+  "head_angle": -111.4
 }

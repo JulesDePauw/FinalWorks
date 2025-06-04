@@ -1,11 +1,10 @@
 {
   "filename": "Triangle.jpg",
   "label": "Triangle",
-  "description": "Triangle Pose: Strengthens arms, shoulders, and spine. Engages core and stretches hamstrings.",
+  "description": "Triangle pose engages the legs, hips, and spine, promoting balance and flexibility.",
   "priority": {
-    "right_arm_angle": 8,
-    "left_knee_angle": 9,
-    "spine_extension": 7
+    "left_knee_angle": 8,
+    "head_angle": 9
   },
   "keypoints": {
     "nose": {
@@ -153,5 +152,5 @@
     "left_ankle_angle": 156.8,
     "right_ankle_angle": 178.5
   },
-  "head_turn": -0.012
+  "head_angle": -162.8
 }

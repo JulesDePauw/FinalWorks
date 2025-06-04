@@ -1,11 +1,11 @@
 {
   "filename": "DancerWrongHR.jpg",
   "label": "DancerWrongHR",
-  "description": "The Dancer Pose (Ardha Padmasana), modified for incorrect alignment, emphasizing core engagement and balance.",
+  "description": "An inversion pose that can help stretch the neck, shoulders, and upper back. However, proper alignment is crucial to avoid injury.",
   "priority": {
-    "left_knee_angle": 8,
-    "right_knee_angle": 6,
-    "head_turn": 4
+    "head_angle": 8,
+    "shoulder Blade_Separation": 9,
+    "Spine_Extension": 6
   },
   "keypoints": {
     "nose": {
@@ -153,5 +153,5 @@
     "left_ankle_angle": 121.8,
     "right_ankle_angle": 178.4
   },
-  "head_turn": -0.002
+  "head_angle": -18.4
 }
