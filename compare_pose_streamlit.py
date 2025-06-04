@@ -6,17 +6,17 @@ import mediapipe as mp
 
 # === Constants for pose rendering and comparison ===
 MAX_ANGLE_DIFF       = 45
-HEAD_ALIGN_EPSILON   = 20    # aantal pixels tolerantie voor horizontale uitlijning van hoofd
+HEAD_ALIGN_EPSILON   = 20    # tolerance in pixels for horizontal head alignment
 JOINT_RADIUS         = 20
 LINE_THICKNESS       = 10
 LINE_SEGMENTS        = 5
 
 # Grayscale color for missing joints
 MISSING_COLOR = (200, 200, 200)
-# Exact match color (groen)
+# Exact match color (green)
 EXACT_MATCH_COLOR = (0, 255, 0)
-# Vf kleur voor horizontale afwijking
-DEVIATION_COLOR = (0, 255, 255)  # geel voor kleine afwijking
+# Color for small deviation (yellow)
+DEVIATION_COLOR = (0, 255, 255)
 
 # === Angle definitions: (joint triplets for angle calculation) ===
 ANGLE_DEFINITIONS = {
@@ -26,7 +26,7 @@ ANGLE_DEFINITIONS = {
     "right_knee":      [24, 26, 28],
     "neck":            [11, "neck", 12],
     "hip":             [23, "hip_center", 24],
-    # "head" wordt apart behandeld
+    # "head" handled separately
     "left_shoulder":   [23, 11, 13],
     "right_shoulder":  [24, 12, 14],
     "left_wrist":      [13, 15, 19],
@@ -81,10 +81,16 @@ def draw_gradient_line(img, pt1, pt2, color1, color2, segments=LINE_SEGMENTS, th
 
 # === Core skeleton rendering ===
 def render_skeleton_frame(frame, model_json, mode="full"):
+    """
+    Returns:
+      last_render: annotated frame
+      last_score: overall int score
+      joint_norms: dict mapping angle name to normalized deviation (0–1)
+    """
     global frame_counter, last_render, last_score, last_heavy
     now = time.time()
     if last_render is not None and (now - last_heavy) < 0.05:
-        return last_render, last_score
+        return last_render, last_score, {}  # return empty norms if skipping heavy calculation
     last_heavy = now
     frame_counter += 1
 
@@ -94,7 +100,7 @@ def render_skeleton_frame(frame, model_json, mode="full"):
     results = pose.process(rgb_small)
     h_ratio, w_ratio = h / 240, w / 320
 
-    # 1) Verzamel alle gedetecteerde keypoints in volledige resolutie
+    # 1) Collect keypoints at full resolution
     pose_px = {}
     if results.pose_landmarks:
         for i, lm in enumerate(results.pose_landmarks.landmark):
@@ -102,7 +108,7 @@ def render_skeleton_frame(frame, model_json, mode="full"):
             y_full = int(lm.y * 240 * h_ratio)
             pose_px[i] = (x_full, y_full)
 
-    # 2) Bereken virtuele joints
+    # 2) Compute virtual joints
     virtual_joints = {}
     if 11 in pose_px and 12 in pose_px:
         virtual_joints['neck'] = midpoint(pose_px[11], pose_px[12])
@@ -114,27 +120,29 @@ def render_skeleton_frame(frame, model_json, mode="full"):
     def get_coord(x):
         return pose_px.get(x) if isinstance(x, int) else virtual_joints.get(x)
 
-    # 3) Bereken kleur per gewricht
+    # 3) Compute colors and joint norms
     raw_colors   = {}
+    joint_norms  = {}
     total_diff, counted = 0, 0
 
     if mode == "full":
-        # Eerst de “norm” voor alle andere gewrichten
         for name, (a, b, c) in ANGLE_DEFINITIONS.items():
             pa, pb, pc = get_coord(a), get_coord(b), get_coord(c)
             if pa is not None and pb is not None and pc is not None:
                 angle = calculate_angle(pa, pb, pc)
-                model = model_json.get('angles', {}).get(name + '_angle', angle)
-                diff = abs(angle - model)
+                model_angle = model_json.get('angles', {}).get(name + '_angle', angle)
+                diff = abs(angle - model_angle)
                 norm = min(diff / MAX_ANGLE_DIFF, 1.0)
+                joint_norms[name] = norm
                 color = gradient_color(norm)
                 total_diff += norm
                 counted += 1
             else:
+                joint_norms[name] = 1.0
                 color = MISSING_COLOR
             raw_colors.setdefault(b, []).append(color)
 
-        # Head horizontaal uitlijnen boven schouders
+        # Head horizontal alignment above shoulders
         left_sh  = get_coord(11)
         right_sh = get_coord(12)
         head_pt  = get_coord('head')
@@ -142,34 +150,30 @@ def render_skeleton_frame(frame, model_json, mode="full"):
             mid_sh_x = int((left_sh[0] + right_sh[0]) / 2)
             head_x   = head_pt[0]
             diff_px  = abs(head_x - mid_sh_x)
-            # Debug
-         #  print(f"[DEBUG] head_x = {head_x}, mid_sh_x = {mid_sh_x}, diff_px = {diff_px}")
             if diff_px <= HEAD_ALIGN_EPSILON:
-                # Perfect horizontale uitlijning: groen
                 color_h = EXACT_MATCH_COLOR
             elif diff_px <= 2 * HEAD_ALIGN_EPSILON:
-                # Kleine afwijking: geel
                 color_h = DEVIATION_COLOR
             else:
-                # Grote afwijking: rood
                 color_h = (0, 0, 255)
         else:
             color_h = MISSING_COLOR
         raw_colors.setdefault('head', []).append(color_h)
+        joint_norms['head_alignment'] = min(diff_px / (2 * HEAD_ALIGN_EPSILON), 1.0) if head_pt and left_sh and right_sh else 1.0
 
-    # 4) Gemiddelde kleur per gewricht berekenen
+    # 4) Average color per joint for rendering
     joint_colors = {}
     for j, clist in raw_colors.items():
         avg_col = tuple(int(np.mean([c[i] for c in clist])) for i in range(3))
         joint_colors[j] = avg_col
 
-    # 5) Teken cirkels op de gewrichten zelf
+    # 5) Draw circles at joints
     for joint_id, color in joint_colors.items():
         pt = get_coord(joint_id)
         if pt is not None:
             cv2.circle(frame, pt, JOINT_RADIUS, color, -1)
 
-    # 6) Teken lijnen tussen gewrichten
+    # 6) Draw connecting lines
     links = [
         ('head','neck'), ('neck',11), ('neck',12),
         (11,13),(13,15),(12,14),(14,16),
@@ -178,7 +182,7 @@ def render_skeleton_frame(frame, model_json, mode="full"):
     ]
     for p1, p2 in links:
         pt1, pt2 = get_coord(p1), get_coord(p2)
-        if pt1 is not None and pt2 is not None:
+        if pt1 and pt2:
             draw_gradient_line(
                 frame,
                 pt1, pt2,
@@ -186,7 +190,7 @@ def render_skeleton_frame(frame, model_json, mode="full"):
                 joint_colors.get(p2, MISSING_COLOR)
             )
 
-    # 7) Score berekenen (hoofd niet meegeteld in gemiddelde)
+    # 7) Compute overall score (exclude head_alignment)
     if counted == 0:
         score = 0
     else:
@@ -194,9 +198,9 @@ def render_skeleton_frame(frame, model_json, mode="full"):
         score = 0 if np.isnan(pct) else max(0, int(pct))
 
     last_render, last_score = frame, score
-    return last_render, last_score
+    return last_render, last_score, joint_norms
 
-# === Feedback loop ===
+# === Feedback loop for standalone testing ===
 def run_streamlit_feedback(modelpath, frame_ph, hold_time=30, feedback_text_area=None, timer_area=None):
     with open(modelpath) as f:
         model_json = json.load(f)
@@ -210,7 +214,7 @@ def run_streamlit_feedback(modelpath, frame_ph, hold_time=30, feedback_text_area
         if not ret:
             break
         frame = cv2.flip(frame, 1)
-        annotated, score = render_skeleton_frame(frame.copy(), model_json, mode='full')
+        annotated, score, joint_norms = render_skeleton_frame(frame.copy(), model_json, mode='full')
         scores.append(score or 0)
         frame_ph.image(annotated, channels='BGR', use_container_width=True)
         if timer_area:
@@ -218,7 +222,7 @@ def run_streamlit_feedback(modelpath, frame_ph, hold_time=30, feedback_text_area
         time.sleep(0.03)
     cap.release()
     avg_score = sum(scores) / len(scores) if scores else 0
-    feedback = f"Je gemiddeldescore was {avg_score:.1f}%"
+    feedback = f"Your average score was {avg_score:.1f}%"
     if feedback_text_area:
         feedback_text_area.markdown(f"**Feedback:** {feedback}")
     return avg_score
