@@ -58,7 +58,6 @@ def play_tts(text: str):
 feedback_queue = queue.Queue()
 
 def get_summary_feedback(pose_name: str, avg_score: float) -> str:
-    # Aangepaste prompt voor Engelse, korte feedback zonder cijfers
     prompt = (
         f"You are a friendly yoga coach. The user performed '{pose_name}'. "
         f"Based on their performance, provide one concise, positive tip for improvement. "
@@ -73,6 +72,14 @@ def get_summary_feedback(pose_name: str, avg_score: float) -> str:
     except Exception as e:
         print(f"[LOG] fout bij get_summary_feedback: {e}")
         return "⚠️ Feedback not available"
+
+# --- Globale configuratievariabelen ---
+CAMERA_CHECK_DURATION = 11 # Duur van de camera-instelfase in seconden
+MODELPOSE_DIR = "modelposes_json"
+ROUTINE_DIR   = "routines_json"
+IMAGE_DIR     = "modelposes"
+FEEDBACK_COUNT = 3
+CAMERA_TEST_VIDEO_PATH = "Camera_test.mp4" # Path to your video file
 
 def init_state():
     defaults = {
@@ -90,7 +97,7 @@ def init_state():
         'tts_test_done': False,
         'tts_hold_test_done': False,
         'prev_step': None,
-        'cap': None # Initialize cap here as well
+        'cap': None
     }
     for key, val in defaults.items():
         if key not in st.session_state:
@@ -104,11 +111,6 @@ init_state()
 
 from ui import apply_styles, render_selection_screen, create_main_layout
 apply_styles()
-
-MODELPOSE_DIR = "modelposes_json"
-ROUTINE_DIR   = "routines_json"
-IMAGE_DIR     = "modelposes"
-FEEDBACK_COUNT = 3
 
 def on_select(fn):
     print(f"[LOG] on_select wordt aangeroepen met bestand: {fn}")
@@ -126,25 +128,21 @@ def on_select(fn):
     st.session_state.feedback_triggered = []
     st.session_state.current_scores = []
 
-    # Only initialize camera if it's not already initialized or is released
     if st.session_state.cap is None or not st.session_state.cap.isOpened():
         cap = cv2.VideoCapture(0)
-        # Set a low resolution for potentially better performance during check
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
         st.session_state.cap = cap
         print("[LOG] camera gestart")
 
-    if st.session_state.poses:
-        first_img = st.session_state.poses[0].get('image_path', '')
-        img0 = cv2.imread(os.path.join(IMAGE_DIR, first_img))
-        st.session_state.img_shape = img0.shape[:2] if img0 is not None else None
-    else:
-        st.session_state.img_shape = None
+    st.session_state.img_shape = (427, 640)
 
-    practiceoutine = data.get('name', fn.replace('.json', ''))
-    welcome_text = f"Welcome to {practiceoutine}, please make sure you are fully visible for the camera."
-    play_tts(welcome_text)
+    print(f"[DEBUG] Vaste bijsnijding camera naar (hoogte, breedte): {st.session_state.img_shape}")
+
+    # Oorspronkelijke welcome_text en play_tts() hier verwijderd
+    # practiceoutine = data.get('name', fn.replace('.json', ''))
+    # welcome_text = f"Welcome to {practiceoutine}, Make sure you are fully visible to the camera. Make sure your hands are still visible to the camera when reaching up, or sideways."
+    # play_tts(welcome_text)
     print("[LOG] on_select voltooid")
 
 if not st.session_state.running:
@@ -153,17 +151,6 @@ if not st.session_state.running:
 pose_ph, frame_ph, title_ph, metrics_ph, timer_ph, feedback_ph = create_main_layout()
 VISUAL_FEEDBACK_ENABLED = True
 
-# Cache the placeholder image bytes to avoid re-reading from disk
-@st.cache_data
-def get_placeholder_image_bytes(path):
-    if os.path.isfile(path):
-        return open(path, 'rb').read()
-    return None
-
-placeholder_image_bytes = get_placeholder_image_bytes(os.path.join("assets", "placeholder.jpg"))
-
-
-# Main loop for real-time processing
 if st.session_state.running:
     while st.session_state.running:
         idx       = st.session_state.current_step
@@ -171,7 +158,7 @@ if st.session_state.running:
         pose_name = step['pose']
         now       = time.time()
         elapsed   = now - st.session_state.phase_start
-        t0 = time.time() # Start timing for FPS calculation
+        t0 = time.time()
 
         ret, frame = st.session_state.cap.read()
         if not ret:
@@ -180,10 +167,10 @@ if st.session_state.running:
             break
         frame = cv2.flip(frame, 1)
 
-        # Image scaling/cropping should only happen if img_shape is determined
         if st.session_state.img_shape:
             th, tw = st.session_state.img_shape
             h, w = frame.shape[:2]
+            
             if w/h > tw/th:
                 nw = int(h * tw / th)
                 x0 = (w - nw)//2
@@ -192,49 +179,50 @@ if st.session_state.running:
                 nh = int(w * th / tw)
                 y0 = (h - nh)//2
                 frame = frame[y0:y0+nh, :]
-        
-        annotated_frame = frame.copy() # Start with a copy of the frame for annotations
-        score = None # Reset score for each frame
+            
+        else:
+            print("[DEBUG] st.session_state.img_shape is None, bijsnijden wordt overgeslagen. Dit zou niet moeten gebeuren met expliciete instelling.")
+
+
+        annotated_frame = frame.copy()
+        score = None
 
         if st.session_state.phase == 'camera_check':
             if st.session_state.current_step != 0:
-                # This should not happen if camera_check is only for the first step
                 st.session_state.phase = 'prepare'
                 st.session_state.phase_start = time.time()
                 continue
 
-            # Clear previous UI elements if coming from another state
-            if st.session_state.prev_step != 'camera_check_init': # A unique value for initial state
+            if st.session_state.prev_step != 'camera_check_init':
                 title_ph.header(f"🔍 Camera Check")
-                # Only display the placeholder image once per 'camera_check' phase
-                if placeholder_image_bytes:
-                    pose_ph.image(placeholder_image_bytes, use_container_width=True)
+                if os.path.exists(CAMERA_TEST_VIDEO_PATH):
+                    pose_ph.video(CAMERA_TEST_VIDEO_PATH, format="video/mp4", start_time=0, loop=True, autoplay=True)
                 else:
-                    pose_ph.empty() # Clear if placeholder not found
-                metrics_ph.empty() # Clear metrics from previous run
-                feedback_ph.empty() # Clear feedback
+                    pose_ph.empty()
+                    st.warning(f"Video file not found: {CAMERA_TEST_VIDEO_PATH}")
+                metrics_ph.empty()
+                feedback_ph.empty()
                 st.session_state.prev_step = 'camera_check_init'
 
 
-            remaining = max(0, 5 - int(elapsed)) # Ensure remaining is not negative
+            remaining = max(0, CAMERA_CHECK_DURATION - int(elapsed))
             timer_ph.markdown(f"⏳ Zorg dat je goed zichtbaar bent ({remaining}s)...")
 
-            frame_ph.image(frame, channels="BGR", use_container_width=True) # Display raw camera feed
+            frame_ph.image(frame, channels="BGR", use_container_width=True)
 
-            if elapsed >= 5:
+            if elapsed >= CAMERA_CHECK_DURATION:
                 st.session_state.phase = 'prepare'
                 st.session_state.phase_start = time.time()
-                st.session_state.prev_step = None # Reset prev_step for next phase
-                # Clear elements that are no longer needed
+                st.session_state.prev_step = None
                 pose_ph.empty()
                 timer_ph.empty()
                 feedback_ph.empty() 
-                metrics_ph.empty() # Clear metrics placeholder
+                metrics_ph.empty()
                 continue
 
-        # Logic for displaying model pose and feedback for other phases
         else: # Phases: 'prepare', 'hold', 'transition'
-            if st.session_state.prev_step != idx: # Only update model pose image once per step
+            if st.session_state.prev_step != idx:
+                title_ph.header(f"🧘‍♀️ {pose_name}")
                 pose_ph.markdown(f"📌 **Model pose:** {pose_name}")
                 raw = step.get('image_path', '')
                 candidates = [ raw, os.path.join(IMAGE_DIR, raw), os.path.join(IMAGE_DIR, f"{pose_name}.jpg") ]
@@ -245,13 +233,12 @@ if st.session_state.running:
                         found_image = True
                         break
                 if not found_image:
-                    pose_ph.empty() # Clear if no image found
+                    pose_ph.empty()
                 
-                # Initial feedback for the first step
                 if idx == 0 and step.get('prep_time', 5) > 0 and st.session_state.phase == 'prepare':
                     feedback_ph.markdown(f"ℹ️ {st.session_state.routine_meta.get('description','')} ")
                 
-                st.session_state.prev_step = idx # Mark this step as initialized
+                st.session_state.prev_step = idx
 
             if st.session_state.phase == 'prepare':
                 prep_time = step.get('prep_time', 5)
@@ -266,23 +253,19 @@ if st.session_state.running:
                 else:
                     timer_ph.markdown(f"⏳ Voorbereiding: {int(prep_time - elapsed)} s")
                 
-                # Skeleton for prepare phase (only landmarks, no comparison)
                 annotated_frame, _ = render_skeleton_frame(
                     frame.copy(),
-                    {}, # No model pose comparison during prepare
+                    {},
                     mode="landmarks"
                 )
 
             elif st.session_state.phase == 'hold':
-                # Removed the "Audio Test 2." line to avoid repetitive TTS during hold phase
-                # if not st.session_state.tts_hold_test_done:
-                #     st.session_state.tts_hold_test_done = True
                 hold_time = step.get('hold_time', 30)
                 
                 annotated_frame, score = render_skeleton_frame(
                     frame.copy(),
                     st.session_state.pose_models.get(f"{pose_name}.json", {}),
-                    mode='full' # Full skeleton and comparison
+                    mode='full'
                 )
                 if score is not None:
                     st.session_state.current_scores.append(score)
@@ -292,12 +275,11 @@ if st.session_state.running:
                     for it, thr in enumerate(thresholds):
                         if elapsed >= thr and it not in st.session_state.feedback_triggered:
                             st.session_state.feedback_triggered.append(it)
-                            # The function that calls the LLM and puts the feedback in the queue
                             def fetch_feedback_async(pose_name_inner, avg_s_inner):
                                 tip_full = get_summary_feedback(
                                     pose_name_inner, avg_s_inner
                                 )
-                                feedback_queue.put(tip_full) # Only put text in queue
+                                feedback_queue.put(tip_full)
 
                             avg_s = (
                                 sum(st.session_state.current_scores)
@@ -312,19 +294,21 @@ if st.session_state.running:
                             ).start()
                             break
 
-                # Get the feedback from the queue in the main loop and play it
                 if not feedback_queue.empty():
                     new_tip = feedback_queue.get()
                     st.session_state.feedback_history = [f"💡 {new_tip}"]
-                    play_tts(new_tip) # <-- BELANGRIJKE WIJZIGING: roep play_tts hier aan in de hoofdthread!
+                    play_tts(new_tip)
 
                 if VISUAL_FEEDBACK_ENABLED and st.session_state.feedback_history:
                     feedback_ph.markdown(st.session_state.feedback_history[-1])
 
                 timer_ph.markdown(f"⏳ Houd vast: {int(hold_time - elapsed)} s")
                 if elapsed >= hold_time:
-                    final_avg = sum(st.session_state.current_scores)/len(st.session_state.current_scores) if st.session_state.current_scores else 0
-                    st.session_state.score_log.setdefault(pose_name, []).append(final_avg)
+                    if st.session_state.current_scores:
+                        st.session_state.score_log.setdefault(pose_name, []).append(list(st.session_state.current_scores))
+                    else:
+                        st.session_state.score_log.setdefault(pose_name, []).append([])
+
                     st.session_state.phase = 'transition'
                     st.session_state.phase_start = now
                     continue
@@ -340,24 +324,21 @@ if st.session_state.running:
                     if st.session_state.current_step >= len(st.session_state.poses):
                         st.session_state.running = False
                         break
-                    st.session_state.phase = 'prepare' # Go to prepare for next pose
+                    st.session_state.phase = 'prepare'
                     st.session_state.phase_start = time.time()
-                    st.session_state.prev_step = None # Reset prev_step for next prepare/pose
+                    st.session_state.prev_step = None
                     continue
                 else:
                     timer_ph.markdown(f"⏳ Volgende pose over: {int(transition_time - elapsed)} s")
                 
-                # Skeleton for transition phase (only landmarks, no comparison)
                 annotated_frame, _ = render_skeleton_frame(
                     frame.copy(),
-                    {}, # No model pose comparison during transition
+                    {},
                     mode="landmarks"
                 )
 
-            # Update frame_ph with the annotated_frame for all non-camera_check phases
-            if score is not None: # Add score overlay if available
+            if score is not None:
                 txt = f"{score:.1f}%"
-                # Corrected line: Added 'txt' as the first argument
                 (wt, ht), _ = cv2.getTextSize(txt, cv2.FONT_HERSHEY_SIMPLEX, 1.5, 2)
                 ov = annotated_frame.copy()
                 cv2.rectangle(ov, (5,5), (5+wt+10, 5+ht+10), (50,50,50), -1)
@@ -372,37 +353,70 @@ if st.session_state.running:
                     2
                 )
             frame_ph.image(annotated_frame, channels='BGR', use_container_width=True)
-            title_ph.header(f"🧘‍♀️ {pose_name}") # Update title for non-camera_check phases
             
-        t1 = time.time() # End timing for FPS calculation
+        t1 = time.time()
         fps = 1/(t1-t0) if t1>t0 else 0
         metrics_ph.markdown(f"**Proc:** {(t1-t0)*1000:.0f} ms — **{fps:.1f} fps**")
         
-        # Removed or drastically reduced time.sleep for faster updates.
-        # Streamlit's rerun mechanism will still introduce some delay, but this
-        # allows the loop to run as fast as possible.
-        # time.sleep(0.001) # Minimal sleep to prevent 100% CPU, or remove entirely if needed
+pose_ph.empty()
+frame_ph.empty()
+title_ph.empty()
+metrics_ph.empty()
+timer_ph.empty()
+feedback_ph.empty()
 
-
-# Eindreview
 if st.session_state.cap is not None:
     _ = st.session_state.cap.release()
-    st.session_state.cap = None # Set to None after releasing
+    st.session_state.cap = None
 
 if st.session_state.score_log:
-    for pn, sc in st.session_state.score_log.items():
-        img_col, plot_col = st.columns([1,1])
-        with img_col:
-            tp = os.path.join(IMAGE_DIR, f"{pn}.jpg")
-            if os.path.isfile(tp):
-                st.image(tp, use_container_width=True)
-        with plot_col:
-            avg = sum(sc)/len(sc)
-            top = max(sc)
-            st.markdown(f"## {pn}")
-            st.write(f"**Topscore:** {top:.1f}% — **Gem.score:** {avg:.1f}%")
-            feedback = get_summary_feedback(pn, avg)
-            st.info(feedback)
+    st.header("✨ Jouw Routine Overzicht ✨")
+    for pn, scores_for_pose_attempts in st.session_state.score_log.items():
+        for i, attempt_scores in enumerate(scores_for_pose_attempts):
+            img_col, plot_col = st.columns([1,1])
+            with img_col:
+                tp = os.path.join(IMAGE_DIR, f"{pn}.jpg")
+                if os.path.isfile(tp):
+                    st.image(tp, use_container_width=True)
+                else:
+                    st.markdown(f"Model afbeelding voor **{pn}** niet gevonden.")
+            with plot_col:
+                avg = sum(attempt_scores)/len(attempt_scores) if attempt_scores else 0
+                top = max(attempt_scores) if attempt_scores else 0
+                
+                st.markdown(f"## {pn} (Poging {i+1})")
+                st.markdown(f"<p style='font-size:1.2em; color:gray;'>Today</p>", unsafe_allow_html=True)
+                st.markdown(f"<p style='font-size:1.5em; color:#00D09B; margin-bottom: 0.1em;'>Average Score <span style='float:right; font-weight:bold;'>{avg:.0f}%</span></p>", unsafe_allow_html=True)
+                st.markdown(f"<p style='font-size:1.5em; color:#00D09B;'>High Score <span style='float:right; font-weight:bold;'>{top:.0f}%</span></p>", unsafe_allow_html=True)
+                
+                if attempt_scores:
+                    fig, ax = plt.subplots(figsize=(8, 4))
+                    
+                    ax.plot(attempt_scores, color='#00D09B', linewidth=2)
+                    
+                    ax.set_facecolor('#F8F8F8')
+                    ax.grid(False)
+                    ax.set_ylim(0, 100)
+                    ax.set_ylabel("Score (%)")
+                    ax.set_xlabel("Meting (frames)")
+                    
+                    ax.axhline(y=70, color='#E0E0E0', linestyle='-', linewidth=1)
+                    ax.axhline(y=80, color='#E0E0E0', linestyle='-', linewidth=1)
+                    ax.set_yticks([0, 20, 40, 60, 70, 80, 100])
+                    
+                    ax.spines['right'].set_visible(False)
+                    ax.spines['top'].set_visible(False)
+                    ax.spines['left'].set_color('gray')
+                    ax.spines['bottom'].set_color('gray')
+                    
+                    st.pyplot(fig)
+                    plt.close(fig)
+                else:
+                    st.write("Geen scoregegevens beschikbaar voor deze poging.")
+
+                feedback = get_summary_feedback(pn, avg)
+                st.info(feedback)
+            st.markdown("---")
 
 if st.button("⇦ Kies een andere routine"):
     st.session_state.running = False
