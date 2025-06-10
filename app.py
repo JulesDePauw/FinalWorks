@@ -74,14 +74,16 @@ def get_summary_feedback(pose_name: str, avg_score: float) -> str:
         return "⚠️ Feedback not available"
 
 # --- Globale configuratievariabelen ---
-# Pas de onderstaande waarde aan naar de exacte duur van 'Camera_test.mp4' in seconden.
-# Bijvoorbeeld, als de video 7.5 seconden duurt, zet CAMERA_CHECK_DURATION = 7.5
-CAMERA_CHECK_DURATION = 11 # VOER HIER DE WERKELIJKE DUUR VAN JE VIDEO IN!
+CAMERA_CHECK_DURATION = 11
 MODELPOSE_DIR = "modelposes_json"
 ROUTINE_DIR   = "routines_json"
 IMAGE_DIR     = "modelposes"
 FEEDBACK_COUNT = 3
-CAMERA_TEST_VIDEO_PATH = "Camera_test.mp4" # Path to your video file
+CAMERA_TEST_VIDEO_PATH = "Camera_test.mp4"
+
+# Drempel voor handgebaar pauze
+PAUSE_GESTURE_THRESHOLD_X_RIGHT = 100 # Aantal pixels vanaf de rechterkant van het frame
+PAUSE_GESTURE_COOLDOWN = 2 # Seconden cooldown om herhaalde triggers te voorkomen
 
 def init_state():
     defaults = {
@@ -102,7 +104,8 @@ def init_state():
         'cap': None,
         'paused': False,
         'pause_start_time': None,
-        're_render_pose_image': False # Add this new state variable
+        're_render_pose_image': False,
+        'last_pause_gesture_time': 0 # Nieuwe variabele voor cooldown
     }
     for key, val in defaults.items():
         if key not in st.session_state:
@@ -116,6 +119,25 @@ init_state()
 
 from ui import apply_styles, render_selection_screen, create_main_layout
 apply_styles()
+
+def toggle_pause():
+    current_time = time.time()
+    # Controleer of de cooldown voorbij is
+    if current_time - st.session_state.last_pause_gesture_time > PAUSE_GESTURE_COOLDOWN:
+        st.session_state.paused = not st.session_state.paused
+        if st.session_state.paused:
+            st.session_state.pause_start_time = time.time()
+        else:
+            if st.session_state.pause_start_time is not None:
+                paused_duration = time.time() - st.session_state.pause_start_time
+                # Pas de phase_start aan om de gepauzeerde tijd te compenseren
+                st.session_state.phase_start += paused_duration
+                st.session_state.pause_start_time = None
+                st.session_state.re_render_pose_image = True # Forceer herrender van de pose afbeelding
+                if st.session_state.phase == 'hold': # Reset feedback triggers alleen als we in de 'hold' fase waren
+                    st.session_state.feedback_triggered = []
+        st.session_state.last_pause_gesture_time = current_time # Update de laatste trigger tijd
+        st.rerun() # Forceer een herrender om de pauze direct te tonen
 
 def on_select(fn):
     print(f"[LOG] on_select wordt aangeroepen met bestand: {fn}")
@@ -134,7 +156,8 @@ def on_select(fn):
     st.session_state.current_scores = []
     st.session_state.paused = False
     st.session_state.pause_start_time = None
-    st.session_state.re_render_pose_image = False # Reset this on routine start
+    st.session_state.re_render_pose_image = False
+    st.session_state.last_pause_gesture_time = 0 # Reset bij nieuwe routine
 
     if st.session_state.cap is None or not st.session_state.cap.isOpened():
         cap = cv2.VideoCapture(0)
@@ -144,9 +167,7 @@ def on_select(fn):
         print("[LOG] camera gestart")
 
     st.session_state.img_shape = (427, 640)
-
     print(f"[DEBUG] Vaste bijsnijding camera naar (hoogte, breedte): {st.session_state.img_shape}")
-
     print("[LOG] on_select voltooid")
 
 if not st.session_state.running:
@@ -154,43 +175,24 @@ if not st.session_state.running:
 
 # Bovenste rij voor knoppen en titel
 top_cols = st.columns([1, 4, 1])
-with top_cols[0]:
-    if st.session_state.running:
-        if st.button("⏯️ Pauze / Hervat"):
-            st.session_state.paused = not st.session_state.paused
-            if st.session_state.paused:
-                st.session_state.pause_start_time = time.time()
-            else:
-                if st.session_state.pause_start_time is not None:
-                    paused_duration = time.time() - st.session_state.pause_start_time
-                    st.session_state.phase_start += paused_duration
-                    st.session_state.pause_start_time = None
-                    # Set flag to re-render pose image when resuming
-                    st.session_state.re_render_pose_image = True
-with top_cols[2]:
+with top_cols[0]: # This column will now contain the Stop button
     if st.session_state.running:
         if st.button("⏹️ Stop Routine"):
             st.session_state.running = False
             st.session_state.cap.release()
             st.session_state.cap = None
-            st.experimental_rerun()
+            st.rerun()
+with top_cols[2]: # This column will now contain the Pause/Resume button
+    if st.session_state.running:
+        if st.button("⏯️ Pauze / Hervat"):
+            toggle_pause() # Gebruik de nieuwe toggle_pause functie
 
 pose_ph, frame_ph, title_ph, metrics_ph, timer_ph, feedback_ph = create_main_layout(top_cols[1])
 VISUAL_FEEDBACK_ENABLED = True
 
 if st.session_state.running:
     while st.session_state.running:
-        if st.session_state.paused:
-            title_ph.header("⏸️ Routine Gepauzeerd")
-            time.sleep(0.1)
-            continue
-
-        idx       = st.session_state.current_step
-        step      = st.session_state.poses[idx]
-        pose_name = step['pose']
-        now       = time.time()
-        elapsed   = now - st.session_state.phase_start
-        t0 = time.time()
+        t0 = time.time() # Start timer here for full loop duration
 
         ret, frame = st.session_state.cap.read()
         if not ret:
@@ -198,6 +200,9 @@ if st.session_state.running:
             st.session_state.running = False
             break
         frame = cv2.flip(frame, 1)
+
+        # Haal de afmetingen van het frame op voor de drempelberekening (ongewijzigd)
+        frame_h, frame_w = frame.shape[:2]
 
         if st.session_state.img_shape:
             th, tw = st.session_state.img_shape
@@ -215,163 +220,174 @@ if st.session_state.running:
         else:
             print("[DEBUG] st.session_state.img_shape is None, bijsnijden wordt overgeslagen. Dit zou niet moeten gebeuren met expliciete instelling.")
 
-
         annotated_frame = frame.copy()
         score = None
+        
+        # Roep render_skeleton_frame aan en ontvang hand_keypoints (altijd uitvoeren)
+        # We geven de pose_model data alleen door als we in de 'hold' fase zijn, anders een lege dict.
+        # Dit is omdat de 'full' mode van render_skeleton_frame hoort bij de pose-vergelijking.
+        # Voor 'prepare' en 'transition' is alleen de 'landmarks' mode voldoende (skelet zonder score).
+        current_pose_model = {}
+        # Ensure that st.session_state.current_step is valid before accessing poses list
+        if st.session_state.current_step < len(st.session_state.poses) and st.session_state.phase == 'hold':
+            current_pose_model = st.session_state.pose_models.get(f"{st.session_state.poses[st.session_state.current_step]['pose']}.json", {})
 
-        if st.session_state.phase == 'camera_check':
-            if st.session_state.current_step != 0:
-                st.session_state.phase = 'prepare'
-                st.session_state.phase_start = time.time()
-                continue
+        annotated_frame, score, hand_keypoints = render_skeleton_frame(
+            frame.copy(),
+            current_pose_model,
+            mode='full' if st.session_state.phase == 'hold' else 'landmarks'
+        )
 
-            if st.session_state.prev_step != 'camera_check_init':
-                title_ph.header(f"🔍 Camera Check")
-                if os.path.exists(CAMERA_TEST_VIDEO_PATH):
-                    pose_ph.video(CAMERA_TEST_VIDEO_PATH, format="video/mp4", start_time=0, loop=False, autoplay=True)
-                else:
-                    pose_ph.empty()
-                    st.warning(f"Video file not found: {CAMERA_TEST_VIDEO_PATH}")
-                metrics_ph.empty()
-                feedback_ph.empty()
-                st.session_state.prev_step = 'camera_check_init'
-
-
-            remaining = max(0, int(CAMERA_CHECK_DURATION - elapsed))
-            timer_ph.markdown(f"⏳ Zorg dat je goed zichtbaar bent ({remaining}s)...")
-
-            frame_ph.image(frame, channels="BGR", use_container_width=True)
-
-            if elapsed >= CAMERA_CHECK_DURATION:
-                st.session_state.phase = 'prepare'
-                st.session_state.phase_start = time.time()
-                st.session_state.prev_step = None
-                pose_ph.empty()
-                timer_ph.empty()
-                feedback_ph.empty() 
-                metrics_ph.empty()
-                continue
-
-        else: # Phases: 'prepare', 'hold', 'transition'
-            # --- START: Modified rendering logic for pose image ---
-            if st.session_state.prev_step != idx or st.session_state.re_render_pose_image:
-                title_ph.header(f"🧘‍♀️ {pose_name}")
-                pose_ph.markdown(f"📌 **Model pose:** {pose_name}")
-                raw = step.get('image_path', '')
-                candidates = [ raw, os.path.join(IMAGE_DIR, raw), os.path.join(IMAGE_DIR, f"{pose_name}.jpg") ]
-                found_image = False
-                for p in candidates:
-                    if p and os.path.isfile(p):
-                        pose_ph.image(p, use_container_width=True)
-                        found_image = True
-                        break
-                if not found_image:
-                    pose_ph.empty()
-                
-                if idx == 0 and step.get('prep_time', 5) > 0 and st.session_state.phase == 'prepare':
-                    feedback_ph.markdown(f"ℹ️ {st.session_state.routine_meta.get('description','')} ")
-                
-                st.session_state.prev_step = idx
-                st.session_state.re_render_pose_image = False # Reset the flag after rendering
-            # --- END: Modified rendering logic for pose image ---
-
-            if st.session_state.phase == 'prepare':
-                prep_time = step.get('prep_time', 5)
-                if elapsed >= prep_time:
-                    st.session_state.phase = 'hold'
-                    st.session_state.phase_start = now
-                    st.session_state.feedback_history = []
-                    st.session_state.feedback_triggered = []
-                    st.session_state.current_scores = []
-                    st.session_state.tts_hold_test_done = False
+        # Controleer op pauzegebaar aan de rechterkant van het scherm
+        if st.session_state.phase != 'camera_check': # Alleen actief na de camera check
+            for h_kp_x, h_kp_y in hand_keypoints:
+                # Als een handkeypoint zich aan de rechterkant van het frame bevindt
+                if h_kp_x > (frame_w - PAUSE_GESTURE_THRESHOLD_X_RIGHT):
+                    toggle_pause()
+                    # Zodra de pauze is getriggerd, doorbreek de lus om te voorkomen dat er meer dan eens gepauzeerd wordt.
+                    break 
+        
+        # Logica die alleen draait als de routine NIET gepauzeerd is
+        if not st.session_state.paused:
+            idx       = st.session_state.current_step
+            step      = st.session_state.poses[idx]
+            pose_name = step['pose']
+            now       = time.time()
+            elapsed   = now - st.session_state.phase_start
+            
+            if st.session_state.phase == 'camera_check':
+                if st.session_state.current_step != 0:
+                    st.session_state.phase = 'prepare'
+                    st.session_state.phase_start = time.time()
                     continue
-                else:
-                    timer_ph.markdown(f"⏳ Voorbereiding: {int(prep_time - elapsed)} s")
-                
-                annotated_frame, _ = render_skeleton_frame(
-                    frame.copy(),
-                    {},
-                    mode="landmarks"
-                )
 
-            elif st.session_state.phase == 'hold':
-                hold_time = step.get('hold_time', 30)
-                
-                annotated_frame, score = render_skeleton_frame(
-                    frame.copy(),
-                    st.session_state.pose_models.get(f"{pose_name}.json", {}),
-                    mode='full'
-                )
-                if score is not None:
-                    st.session_state.current_scores.append(score)
-
-                if VISUAL_FEEDBACK_ENABLED:
-                    thresholds = [(i+1) * hold_time / FEEDBACK_COUNT for i in range(FEEDBACK_COUNT)]
-                    for it, thr in enumerate(thresholds):
-                        if elapsed >= thr and it not in st.session_state.feedback_triggered:
-                            st.session_state.feedback_triggered.append(it)
-                            def fetch_feedback_async(pose_name_inner, avg_s_inner):
-                                tip_full = get_summary_feedback(
-                                    pose_name_inner, avg_s_inner
-                                )
-                                feedback_queue.put(tip_full)
-
-                            avg_s = (
-                                sum(st.session_state.current_scores)
-                                / len(st.session_state.current_scores)
-                                if st.session_state.current_scores
-                                else 0
-                            )
-                            threading.Thread(
-                                target=fetch_feedback_async,
-                                args=(pose_name, avg_s),
-                                daemon=True,
-                            ).start()
-                            break
-
-                if not feedback_queue.empty():
-                    new_tip = feedback_queue.get()
-                    st.session_state.feedback_history = [f"💡 {new_tip}"]
-                    play_tts(new_tip)
-
-                if VISUAL_FEEDBACK_ENABLED and st.session_state.feedback_history:
-                    feedback_ph.markdown(st.session_state.feedback_history[-1])
-
-                timer_ph.markdown(f"⏳ Houd vast: {int(hold_time - elapsed)} s")
-                if elapsed >= hold_time:
-                    if st.session_state.current_scores:
-                        st.session_state.score_log.setdefault(pose_name, []).append(list(st.session_state.current_scores))
+                if st.session_state.prev_step != 'camera_check_init':
+                    title_ph.header(f"🔍 Camera Check")
+                    if os.path.exists(CAMERA_TEST_VIDEO_PATH):
+                        pose_ph.video(CAMERA_TEST_VIDEO_PATH, format="video/mp4", start_time=0, loop=False, autoplay=True)
                     else:
-                        st.session_state.score_log.setdefault(pose_name, []).append([])
+                        pose_ph.empty()
+                        st.warning(f"Video file not found: {CAMERA_TEST_VIDEO_PATH}")
+                    metrics_ph.empty()
+                    feedback_ph.empty()
+                    st.session_state.prev_step = 'camera_check_init'
 
-                    st.session_state.phase = 'transition'
-                    st.session_state.phase_start = now
-                    continue
 
-            elif st.session_state.phase == 'transition':
-                transition_time = step.get('transition_time', 3)
-                if elapsed >= transition_time:
-                    feedback_ph.markdown(f"🔄 {step.get('transition', '')}")
-                    st.session_state.feedback_history = []
-                    st.session_state.feedback_triggered = []
-                    st.session_state.current_scores = []
-                    st.session_state.current_step += 1
-                    if st.session_state.current_step >= len(st.session_state.poses):
-                        st.session_state.running = False
-                        break
+                remaining = max(0, int(CAMERA_CHECK_DURATION - elapsed))
+                timer_ph.markdown(f"⏳ Zorg dat je goed zichtbaar bent ({remaining}s)...")
+
+                if elapsed >= CAMERA_CHECK_DURATION:
                     st.session_state.phase = 'prepare'
                     st.session_state.phase_start = time.time()
                     st.session_state.prev_step = None
+                    pose_ph.empty()
+                    timer_ph.empty()
+                    feedback_ph.empty() 
+                    metrics_ph.empty()
                     continue
-                else:
-                    timer_ph.markdown(f"⏳ Volgende pose over: {int(transition_time - elapsed)} s")
-                
-                annotated_frame, _ = render_skeleton_frame(
-                    frame.copy(),
-                    {},
-                    mode="landmarks"
-                )
 
+            else: # Phases: 'prepare', 'hold', 'transition'
+                if st.session_state.prev_step != idx or st.session_state.re_render_pose_image:
+                    title_ph.header(f"🧘‍♀️ {pose_name}")
+                    pose_ph.markdown(f"📌 **Model pose:** {pose_name}")
+                    raw = step.get('image_path', '')
+                    candidates = [ raw, os.path.join(IMAGE_DIR, raw), os.path.join(IMAGE_DIR, f"{pose_name}.jpg") ]
+                    found_image = False
+                    for p in candidates:
+                        if p and os.path.isfile(p):
+                            pose_ph.image(p, use_container_width=True)
+                            found_image = True
+                            break
+                    if not found_image:
+                        pose_ph.empty()
+                    
+                    if idx == 0 and step.get('prep_time', 5) > 0 and st.session_state.phase == 'prepare':
+                        feedback_ph.markdown(f"ℹ️ {st.session_state.routine_meta.get('description','')} ")
+                    
+                    st.session_state.prev_step = idx
+                    st.session_state.re_render_pose_image = False
+                
+                if st.session_state.phase == 'prepare':
+                    prep_time = step.get('prep_time', 5)
+                    if elapsed >= prep_time:
+                        st.session_state.phase = 'hold'
+                        st.session_state.phase_start = now
+                        st.session_state.feedback_history = []
+                        st.session_state.feedback_triggered = []
+                        st.session_state.current_scores = []
+                        st.session_state.tts_hold_test_done = False
+                        continue
+                    else:
+                        timer_ph.markdown(f"⏳ Voorbereiding: {int(prep_time - elapsed)} s")
+                    
+                elif st.session_state.phase == 'hold':
+                    hold_time = step.get('hold_time', 30)
+                    
+                    if score is not None:
+                        st.session_state.current_scores.append(score)
+
+                    if VISUAL_FEEDBACK_ENABLED:
+                        thresholds = [(i+1) * hold_time / FEEDBACK_COUNT for i in range(FEEDBACK_COUNT)]
+                        for it, thr in enumerate(thresholds):
+                            if elapsed >= thr and it not in st.session_state.feedback_triggered:
+                                st.session_state.feedback_triggered.append(it)
+                                def fetch_feedback_async(pose_name_inner, avg_s_inner):
+                                    tip_full = get_summary_feedback(
+                                        pose_name_inner, avg_s_inner
+                                    )
+                                    feedback_queue.put(tip_full)
+
+                                avg_s = (
+                                    sum(st.session_state.current_scores)
+                                    / len(st.session_state.current_scores)
+                                    if st.session_state.current_scores
+                                    else 0
+                                )
+                                threading.Thread(
+                                    target=fetch_feedback_async,
+                                    args=(pose_name, avg_s),
+                                    daemon=True,
+                                ).start()
+                                break
+
+                    if not feedback_queue.empty():
+                        new_tip = feedback_queue.get()
+                        st.session_state.feedback_history = [f"💡 {new_tip}"]
+                        play_tts(new_tip)
+
+                    if VISUAL_FEEDBACK_ENABLED and st.session_state.feedback_history:
+                        feedback_ph.markdown(st.session_state.feedback_history[-1])
+
+                    timer_ph.markdown(f"⏳ Houd vast: {int(hold_time - elapsed)} s")
+                    if elapsed >= hold_time:
+                        if st.session_state.current_scores:
+                            st.session_state.score_log.setdefault(pose_name, []).append(list(st.session_state.current_scores))
+                        else:
+                            st.session_state.score_log.setdefault(pose_name, []).append([])
+
+                        st.session_state.phase = 'transition'
+                        st.session_state.phase_start = now
+                        continue
+
+                elif st.session_state.phase == 'transition':
+                    transition_time = step.get('transition_time', 3)
+                    if elapsed >= transition_time:
+                        feedback_ph.markdown(f"🔄 {step.get('transition', '')}")
+                        st.session_state.feedback_history = []
+                        st.session_state.feedback_triggered = []
+                        st.session_state.current_scores = []
+                        st.session_state.current_step += 1
+                        if st.session_state.current_step >= len(st.session_state.poses):
+                            st.session_state.running = False
+                            break
+                        st.session_state.phase = 'prepare'
+                        st.session_state.phase_start = time.time()
+                        st.session_state.prev_step = None
+                        continue
+                    else:
+                        timer_ph.markdown(f"⏳ Volgende pose over: {int(transition_time - elapsed)} s")
+            
+            # Display score on frame if not paused
             if score is not None:
                 txt = f"{score:.1f}%"
                 (wt, ht), _ = cv2.getTextSize(txt, cv2.FONT_HERSHEY_SIMPLEX, 1.5, 2)
@@ -387,11 +403,21 @@ if st.session_state.running:
                     (255,255,255),
                     2
                 )
-            frame_ph.image(annotated_frame, channels='BGR', use_container_width=True)
             
-        t1 = time.time()
-        fps = 1/(t1-t0) if t1>t0 else 0
-        metrics_ph.markdown(f"**Proc:** {(t1-t0)*1000:.0f} ms — **{fps:.1f} fps**")
+            # Update metrics (only if not paused)
+            t1 = time.time()
+            fps = 1/(t1-t0) if t1>t0 else 0
+            metrics_ph.markdown(f"**Proc:** {(t1-t0)*1000:.0f} ms — **{fps:.1f} fps**")
+
+        else: # If paused, update UI elements to reflect pause state
+            title_ph.header("⏸️ Routine Gepauzeerd")
+            timer_ph.markdown("---") # Clear timer
+            metrics_ph.markdown("---") # Clear metrics
+            feedback_ph.markdown("👋 Beweeg je hand naar de rechterkant van het scherm om te hervatten") # Specific pause message
+            time.sleep(0.1) # Prevent busy-waiting, but still allows camera to update
+        
+        # Display the camera frame (always, whether paused or not)
+        frame_ph.image(annotated_frame, channels='BGR', use_container_width=True)
         
 # --- START: Schoonmaken van de live-weergave na routine ---
 pose_ph.empty()
@@ -458,4 +484,4 @@ if st.session_state.score_log:
 
 if st.button("⇦ Kies een andere routine"):
     st.session_state.running = False
-    st.experimental_rerun()
+    st.rerun()
