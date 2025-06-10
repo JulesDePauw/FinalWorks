@@ -58,10 +58,11 @@ def play_tts(text: str):
 feedback_queue = queue.Queue()
 
 def get_summary_feedback(pose_name: str, avg_score: float) -> str:
+    # Aangepaste prompt voor Engelse, korte feedback zonder cijfers
     prompt = (
-        f"Je bent een vriendelijke yoga-coach die specifiek ingaat op lichaamshouding en gewrichtsuitlijning. "
-        f"De gebruiker voerde de pose '{pose_name}' uit met een gemiddelde nauwkeurigheid van {avg_score:.1f}% volgens onze metingen. "
-        f"Noem in één beknopte, positieve zin een concrete tip gebaseerd op de gemeten nauwkeurigheid."
+        f"You are a friendly yoga coach. The user performed '{pose_name}'. "
+        f"Based on their performance, provide one concise, positive tip for improvement. "
+        f"Ensure the tip is in English, less than 10 words, and contains no numbers."
     )
     try:
         resp = requests.post(
@@ -71,7 +72,7 @@ def get_summary_feedback(pose_name: str, avg_score: float) -> str:
         return resp.json().get("response", "").strip()
     except Exception as e:
         print(f"[LOG] fout bij get_summary_feedback: {e}")
-        return "⚠️ Feedback niet beschikbaar"
+        return "⚠️ Feedback not available"
 
 def init_state():
     defaults = {
@@ -273,6 +274,9 @@ if st.session_state.running:
                 )
 
             elif st.session_state.phase == 'hold':
+                # Removed the "Audio Test 2." line to avoid repetitive TTS during hold phase
+                # if not st.session_state.tts_hold_test_done:
+                #     st.session_state.tts_hold_test_done = True
                 hold_time = step.get('hold_time', 30)
                 
                 annotated_frame, score = render_skeleton_frame(
@@ -288,20 +292,32 @@ if st.session_state.running:
                     for it, thr in enumerate(thresholds):
                         if elapsed >= thr and it not in st.session_state.feedback_triggered:
                             st.session_state.feedback_triggered.append(it)
-                            # De functie die de LLM aanroept en de feedback in de queue zet
+                            # The function that calls the LLM and puts the feedback in the queue
                             def fetch_feedback_async(pose_name_inner, avg_s_inner):
-                                tip_full = get_summary_feedback(pose_name_inner, avg_s_inner)
-                                feedback_queue.put(tip_full) # Zet alleen de tekst in de queue
-                            avg_s = sum(st.session_state.current_scores)/len(st.session_state.current_scores) if st.session_state.current_scores else 0
-                            threading.Thread(target=fetch_feedback_async, args=(pose_name, avg_s), daemon=True).start()
+                                tip_full = get_summary_feedback(
+                                    pose_name_inner, avg_s_inner
+                                )
+                                feedback_queue.put(tip_full) # Only put text in queue
+
+                            avg_s = (
+                                sum(st.session_state.current_scores)
+                                / len(st.session_state.current_scores)
+                                if st.session_state.current_scores
+                                else 0
+                            )
+                            threading.Thread(
+                                target=fetch_feedback_async,
+                                args=(pose_name, avg_s),
+                                daemon=True,
+                            ).start()
                             break
 
-                # Haal de feedback uit de queue in de hoofdloop en speel deze af
+                # Get the feedback from the queue in the main loop and play it
                 if not feedback_queue.empty():
                     new_tip = feedback_queue.get()
                     st.session_state.feedback_history = [f"💡 {new_tip}"]
-                    play_tts(new_tip) # <-- BELANGRIJKE WIJZIGING: roep play_tts hier aan
-                
+                    play_tts(new_tip) # <-- BELANGRIJKE WIJZIGING: roep play_tts hier aan in de hoofdthread!
+
                 if VISUAL_FEEDBACK_ENABLED and st.session_state.feedback_history:
                     feedback_ph.markdown(st.session_state.feedback_history[-1])
 
@@ -341,6 +357,7 @@ if st.session_state.running:
             # Update frame_ph with the annotated_frame for all non-camera_check phases
             if score is not None: # Add score overlay if available
                 txt = f"{score:.1f}%"
+                # Corrected line: Added 'txt' as the first argument
                 (wt, ht), _ = cv2.getTextSize(txt, cv2.FONT_HERSHEY_SIMPLEX, 1.5, 2)
                 ov = annotated_frame.copy()
                 cv2.rectangle(ov, (5,5), (5+wt+10, 5+ht+10), (50,50,50), -1)
