@@ -273,9 +273,6 @@ if st.session_state.running:
                 )
 
             elif st.session_state.phase == 'hold':
-                if not st.session_state.tts_hold_test_done:
-                    play_tts("Audio Test 2.")
-                    st.session_state.tts_hold_test_done = True
                 hold_time = step.get('hold_time', 30)
                 
                 annotated_frame, score = render_skeleton_frame(
@@ -291,17 +288,20 @@ if st.session_state.running:
                     for it, thr in enumerate(thresholds):
                         if elapsed >= thr and it not in st.session_state.feedback_triggered:
                             st.session_state.feedback_triggered.append(it)
-                            def fetch_and_play(pose_name_inner, avg_s_inner):
+                            # De functie die de LLM aanroept en de feedback in de queue zet
+                            def fetch_feedback_async(pose_name_inner, avg_s_inner):
                                 tip_full = get_summary_feedback(pose_name_inner, avg_s_inner)
-                                feedback_queue.put(tip_full)
-                                play_tts(tip_full)
+                                feedback_queue.put(tip_full) # Zet alleen de tekst in de queue
                             avg_s = sum(st.session_state.current_scores)/len(st.session_state.current_scores) if st.session_state.current_scores else 0
-                            threading.Thread(target=fetch_and_play, args=(pose_name, avg_s), daemon=True).start()
+                            threading.Thread(target=fetch_feedback_async, args=(pose_name, avg_s), daemon=True).start()
                             break
 
+                # Haal de feedback uit de queue in de hoofdloop en speel deze af
                 if not feedback_queue.empty():
                     new_tip = feedback_queue.get()
                     st.session_state.feedback_history = [f"💡 {new_tip}"]
+                    play_tts(new_tip) # <-- BELANGRIJKE WIJZIGING: roep play_tts hier aan
+                
                 if VISUAL_FEEDBACK_ENABLED and st.session_state.feedback_history:
                     feedback_ph.markdown(st.session_state.feedback_history[-1])
 
