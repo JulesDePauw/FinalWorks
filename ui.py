@@ -61,7 +61,8 @@ def render_selection_screen(on_select_callback):
 
 # --- Hoofd layout placeholders ---
 
-def create_main_layout():
+# Aangepaste functie om de titel-placeholder in een specifieke container te plaatsen
+def create_main_layout(title_container): # <-- HIER IS DE WIJZIGING: accepteert nu 'title_container'
     """
     Zet de hoofdindeling (twee kolommen) op en retourneer placeholder-objecten voor:
     pose_ph, frame_ph, title_ph, metrics_ph, timer_ph, feedback_ph
@@ -71,8 +72,11 @@ def create_main_layout():
     pose_ph = display_col.empty()
     with controls_col:
         frame_ph   = st.empty()
-        title_ph   = st.empty()
         metrics_ph = st.empty()
         timer_ph   = st.empty()
         feedback_ph= st.empty()
+    
+    with title_container: # <-- GEBRUIK HIER DE AANGELEVERDE CONTAINER VOOR DE TITEL
+        title_ph = st.empty()
+
     return pose_ph, frame_ph, title_ph, metrics_ph, timer_ph, feedback_ph

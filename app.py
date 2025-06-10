@@ -74,7 +74,9 @@ def get_summary_feedback(pose_name: str, avg_score: float) -> str:
         return "⚠️ Feedback not available"
 
 # --- Globale configuratievariabelen ---
-CAMERA_CHECK_DURATION = 11 # Duur van de camera-instelfase in seconden
+# Pas de onderstaande waarde aan naar de exacte duur van 'Camera_test.mp4' in seconden.
+# Bijvoorbeeld, als de video 7.5 seconden duurt, zet CAMERA_CHECK_DURATION = 7.5
+CAMERA_CHECK_DURATION = 11 # VOER HIER DE WERKELIJKE DUUR VAN JE VIDEO IN!
 MODELPOSE_DIR = "modelposes_json"
 ROUTINE_DIR   = "routines_json"
 IMAGE_DIR     = "modelposes"
@@ -97,7 +99,10 @@ def init_state():
         'tts_test_done': False,
         'tts_hold_test_done': False,
         'prev_step': None,
-        'cap': None
+        'cap': None,
+        'paused': False,
+        'pause_start_time': None,
+        're_render_pose_image': False # Add this new state variable
     }
     for key, val in defaults.items():
         if key not in st.session_state:
@@ -127,6 +132,9 @@ def on_select(fn):
     st.session_state.feedback_history = []
     st.session_state.feedback_triggered = []
     st.session_state.current_scores = []
+    st.session_state.paused = False
+    st.session_state.pause_start_time = None
+    st.session_state.re_render_pose_image = False # Reset this on routine start
 
     if st.session_state.cap is None or not st.session_state.cap.isOpened():
         cap = cv2.VideoCapture(0)
@@ -139,20 +147,44 @@ def on_select(fn):
 
     print(f"[DEBUG] Vaste bijsnijding camera naar (hoogte, breedte): {st.session_state.img_shape}")
 
-    # Oorspronkelijke welcome_text en play_tts() hier verwijderd
-    # practiceoutine = data.get('name', fn.replace('.json', ''))
-    # welcome_text = f"Welcome to {practiceoutine}, Make sure you are fully visible to the camera. Make sure your hands are still visible to the camera when reaching up, or sideways."
-    # play_tts(welcome_text)
     print("[LOG] on_select voltooid")
 
 if not st.session_state.running:
     render_selection_screen(on_select)
 
-pose_ph, frame_ph, title_ph, metrics_ph, timer_ph, feedback_ph = create_main_layout()
+# Bovenste rij voor knoppen en titel
+top_cols = st.columns([1, 4, 1])
+with top_cols[0]:
+    if st.session_state.running:
+        if st.button("⏯️ Pauze / Hervat"):
+            st.session_state.paused = not st.session_state.paused
+            if st.session_state.paused:
+                st.session_state.pause_start_time = time.time()
+            else:
+                if st.session_state.pause_start_time is not None:
+                    paused_duration = time.time() - st.session_state.pause_start_time
+                    st.session_state.phase_start += paused_duration
+                    st.session_state.pause_start_time = None
+                    # Set flag to re-render pose image when resuming
+                    st.session_state.re_render_pose_image = True
+with top_cols[2]:
+    if st.session_state.running:
+        if st.button("⏹️ Stop Routine"):
+            st.session_state.running = False
+            st.session_state.cap.release()
+            st.session_state.cap = None
+            st.experimental_rerun()
+
+pose_ph, frame_ph, title_ph, metrics_ph, timer_ph, feedback_ph = create_main_layout(top_cols[1])
 VISUAL_FEEDBACK_ENABLED = True
 
 if st.session_state.running:
     while st.session_state.running:
+        if st.session_state.paused:
+            title_ph.header("⏸️ Routine Gepauzeerd")
+            time.sleep(0.1)
+            continue
+
         idx       = st.session_state.current_step
         step      = st.session_state.poses[idx]
         pose_name = step['pose']
@@ -196,7 +228,7 @@ if st.session_state.running:
             if st.session_state.prev_step != 'camera_check_init':
                 title_ph.header(f"🔍 Camera Check")
                 if os.path.exists(CAMERA_TEST_VIDEO_PATH):
-                    pose_ph.video(CAMERA_TEST_VIDEO_PATH, format="video/mp4", start_time=0, loop=True, autoplay=True)
+                    pose_ph.video(CAMERA_TEST_VIDEO_PATH, format="video/mp4", start_time=0, loop=False, autoplay=True)
                 else:
                     pose_ph.empty()
                     st.warning(f"Video file not found: {CAMERA_TEST_VIDEO_PATH}")
@@ -205,7 +237,7 @@ if st.session_state.running:
                 st.session_state.prev_step = 'camera_check_init'
 
 
-            remaining = max(0, CAMERA_CHECK_DURATION - int(elapsed))
+            remaining = max(0, int(CAMERA_CHECK_DURATION - elapsed))
             timer_ph.markdown(f"⏳ Zorg dat je goed zichtbaar bent ({remaining}s)...")
 
             frame_ph.image(frame, channels="BGR", use_container_width=True)
@@ -221,7 +253,8 @@ if st.session_state.running:
                 continue
 
         else: # Phases: 'prepare', 'hold', 'transition'
-            if st.session_state.prev_step != idx:
+            # --- START: Modified rendering logic for pose image ---
+            if st.session_state.prev_step != idx or st.session_state.re_render_pose_image:
                 title_ph.header(f"🧘‍♀️ {pose_name}")
                 pose_ph.markdown(f"📌 **Model pose:** {pose_name}")
                 raw = step.get('image_path', '')
@@ -239,6 +272,8 @@ if st.session_state.running:
                     feedback_ph.markdown(f"ℹ️ {st.session_state.routine_meta.get('description','')} ")
                 
                 st.session_state.prev_step = idx
+                st.session_state.re_render_pose_image = False # Reset the flag after rendering
+            # --- END: Modified rendering logic for pose image ---
 
             if st.session_state.phase == 'prepare':
                 prep_time = step.get('prep_time', 5)
@@ -358,6 +393,7 @@ if st.session_state.running:
         fps = 1/(t1-t0) if t1>t0 else 0
         metrics_ph.markdown(f"**Proc:** {(t1-t0)*1000:.0f} ms — **{fps:.1f} fps**")
         
+# --- START: Schoonmaken van de live-weergave na routine ---
 pose_ph.empty()
 frame_ph.empty()
 title_ph.empty()
@@ -368,7 +404,9 @@ feedback_ph.empty()
 if st.session_state.cap is not None:
     _ = st.session_state.cap.release()
     st.session_state.cap = None
+# --- EINDE: Schoonmaken van de live-weergave na routine ---
 
+# Eindreview
 if st.session_state.score_log:
     st.header("✨ Jouw Routine Overzicht ✨")
     for pn, scores_for_pose_attempts in st.session_state.score_log.items():
