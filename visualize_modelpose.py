@@ -51,9 +51,9 @@ while True:
     key = cv2.waitKey(0)
     if key == 27:
         break
-    elif key in [ord("d"), 83, 2555904]:
+    elif key in [ord("q"), 83, 2555904]:
         index = (index + 1) % total
-    elif key in [ord("a"), 81, 2424832]:
+    elif key in [ord("d"), 81, 2424832]:
         index = (index - 1 + total) % total
 
 cv2.destroyAllWindows()

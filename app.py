@@ -376,12 +376,14 @@ if st.session_state.score_log:
             if os.path.isfile(tp):
                 st.image(tp, use_container_width=True)
         with plot_col:
-            avg = (sum(sc)/len(sc))
-            top = max(sc)
             st.markdown(f"## {pn}")
+            # Plot the score progression as a line chart
+            st.line_chart(sc)
+            top = max(sc)
+            avg = sum(sc)/len(sc)
             st.write(f"**Top score:** {top:.1f}% — **Avg. score:** {avg:.1f}%")
-            # For review, show final feedback for each pose at end:
-            feedback = get_summary_feedback(pn, {"overall": 1.0})  # filled just to show syntax
+            # Optionally, final feedback
+            feedback = get_summary_feedback(pn, {j: 1.0 for j in []})  # placeholder
             st.info(feedback)
 
 if st.button("⇦ Choose another routine"):

@@ -7,8 +7,8 @@ import mediapipe as mp
 # === Constants for pose rendering and comparison ===
 MAX_ANGLE_DIFF       = 45
 HEAD_ALIGN_EPSILON   = 20    # tolerance in pixels for horizontal head alignment
-JOINT_RADIUS         = 20
-LINE_THICKNESS       = 10
+JOINT_RADIUS         = 40
+LINE_THICKNESS       = 20
 LINE_SEGMENTS        = 5
 
 # Grayscale color for missing joints
@@ -26,6 +26,8 @@ ANGLE_DEFINITIONS = {
     "right_knee":      [24, 26, 28],
     "neck":            [11, "neck", 12],
     "hip":             [23, "hip_center", 24],
+    "left_hip":         [11, 23, 25],         # b.v. schouder–heup–knie links
+    "right_hip":        [12, 24, 26],         # b.v. schouder–heup–knie rechts
     # "head" handled separately
     "left_shoulder":   [23, 11, 13],
     "right_shoulder":  [24, 12, 14],
