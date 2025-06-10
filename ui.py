@@ -15,9 +15,9 @@ def apply_styles():
     st.markdown(
         """
         <style>
-        .stApp { background-color: #FFFBF2; color: #333333; }
-        div.stButton > button { background-color: #4C9A2A; color: white; border: none; border-radius: 5px; padding: 0.5em 1em; }
-        div.stButton > button:hover { background-color: #3E7D22; }
+        .stApp { background-color: #DCF0EB; color: #707070; }
+        div.stButton > button { background-color: #3CF4C5; color: white; border: none; border-radius: 5px; padding: 0.5em 1em; }
+        div.stButton > button:hover { background-color: #FFFFFF; color: #3CF4C5;}
         div.stSelectbox > div { background-color: #FFFFFF; color: #000000; }
         </style>
         """, unsafe_allow_html=True
