@@ -22,42 +22,76 @@ def generate_tts_wav_with_say(text: str, voice: str = DEFAULT_SAY_VOICE) -> byte
     aiff_path = os.path.join(tmp_dir, f"tts_{uuid.uuid4().hex}.aiff")
     wav_path = os.path.join(tmp_dir, f"tts_{uuid.uuid4().hex}.wav")
     say_cmd = f'say -v "{voice}" -o "{aiff_path}" "{text}"'
-    if os.system(say_cmd) != 0:
-        print(f"[LOG] ⚠️ 'say' commandeerfout voor tekst: {text}")
+    
+    try:
+        subprocess.run(say_cmd, shell=True, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    except subprocess.CalledProcessError as e:
+        print(f"[LOG] ⚠️ 'say' command error for text: {text}. Stderr: {e.stderr.decode()}")
         return b""
-    time.sleep(0.1) # Give system a moment
+    except FileNotFoundError:
+        print(f"[LOG] ⚠️ 'say' command not found. Is this macOS?")
+        return b""
+    
+    time.sleep(0.5) # Increased sleep for stability
+
     afconvert_cmd = f'afconvert -f WAVE -d LEI16@22050 "{aiff_path}" "{wav_path}"'
-    if os.system(afconvert_cmd) != 0:
-        print(f"[LOG] ⚠️ 'afconvert' fout voor bestand: {aiff_path}")
+    try:
+        subprocess.run(afconvert_cmd, shell=True, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    except subprocess.CalledProcessError as e:
+        print(f"[LOG] ⚠️ 'afconvert' error for file: {aiff_path}. Stderr: {e.stderr.decode()}")
         return b""
-    time.sleep(0.1) # Give system a moment
+    except FileNotFoundError:
+        print(f"[LOG] ⚠️ 'afconvert' command not found.")
+        return b""
+
+    time.sleep(0.5) # Increased sleep for stability
+
     try:
         with open(wav_path, 'rb') as f:
             wav_bytes = f.read()
     except Exception as e:
-        print(f"[LOG] ⚠️ Kan WAV niet lezen: {e}")
+        print(f"[LOG] ⚠️ Cannot read WAV: {e}")
         wav_bytes = b""
     finally:
         for p in [aiff_path, wav_path]:
             try:
                 os.remove(p)
-            except:
+            except Exception as e:
+                print(f"[LOG] ⚠️ Failed to remove temp file {p}: {e}")
                 pass
     return wav_bytes
 
 def play_tts(text: str):
+    ENABLE_TTS_PLAYBACK = True 
+    if not ENABLE_TTS_PLAYBACK:
+        print(f"[LOG] TTS playback disabled for debugging: {text}")
+        return
+
+    if st.session_state.get('tts_audio_placeholder') is None:
+        st.session_state.tts_audio_placeholder = st.empty() 
+
     wav_bytes = generate_tts_wav_with_say(text)
     if not wav_bytes:
-        print(f"[LOG] TTS falen: {text}")
+        print(f"[LOG] TTS failed to generate WAV: {text}")
         return
-    b64 = base64.b64encode(wav_bytes).decode()
-    html = f"<audio autoplay='true' style='display:none'><source src='data:audio/wav;base64,{b64}' type='audio/wav'></audio>"
-    st.markdown(html, unsafe_allow_html=True)
-    print(f"[LOG] TTS afgespeeld (autoplay): {text}")
+    try:
+        b64 = base64.b64encode(wav_bytes).decode()
+        html = f"<audio autoplay='true' style='display:none'><source src='data:audio/wav;base64,{b64}' type='audio/wav'></audio>"
+        
+        # Clear the placeholder before updating it to ensure new audio plays
+        st.session_state.tts_audio_placeholder.empty() 
+        st.session_state.tts_audio_placeholder.markdown(html, unsafe_allow_html=True)
+        print(f"[LOG] TTS played (autoplay): {text}")
+    except Exception as e:
+        print(f"[LOG] Error rendering TTS HTML: {e}")
 
-feedback_queue = queue.Queue()
+feedback_queue = queue.Queue() # Re-enabled feedback queue
 
 def get_summary_feedback(pose_name: str, avg_score: float) -> str:
+    ENABLE_LLM_FEEDBACK = True # Re-enabled LLM feedback
+    if not ENABLE_LLM_FEEDBACK:
+        return "LLM feedback disabled for debugging."
+
     prompt = (
         f"You are a friendly yoga coach. The user performed '{pose_name}'. "
         f"Based on their performance, provide one concise, positive tip for improvement. "
@@ -66,24 +100,32 @@ def get_summary_feedback(pose_name: str, avg_score: float) -> str:
     try:
         resp = requests.post(
             "http://localhost:11434/api/generate",
-            json={"model": "llama3.2", "prompt": prompt, "stream": False}
+            json={"model": "llama3.2", "prompt": prompt, "stream": False},
+            timeout=10 
         )
+        resp.raise_for_status() 
         return resp.json().get("response", "").strip()
+    except requests.exceptions.Timeout:
+        print(f"[LOG] LLM request timed out for pose: {pose_name}")
+        return "⚠️ Feedback: Request timed out."
+    except requests.exceptions.ConnectionError:
+        print(f"[LOG] LLM connection error. Is http://localhost:11434 running?")
+        return "⚠️ Feedback: Connection error."
     except Exception as e:
-        print(f"[LOG] fout bij get_summary_feedback: {e}")
+        print(f"[LOG] Error in get_summary_feedback: {e}")
         return "⚠️ Feedback not available"
 
 # --- Globale configuratievariabelen ---
 CAMERA_CHECK_DURATION = 11
 MODELPOSE_DIR = "modelposes_json"
 ROUTINE_DIR   = "routines_json"
-IMAGE_DIR     = "modelposes"
-FEEDBACK_COUNT = 3
+IMAGE_DIR      = "modelposes"
+FEEDBACK_COUNT = 3 # Re-enabled feedback count
 CAMERA_TEST_VIDEO_PATH = "Camera_test.mp4"
 
 # Drempel voor handgebaar pauze
-PAUSE_GESTURE_THRESHOLD_X_RIGHT = 100 # Aantal pixels vanaf de rechterkant van het frame
-PAUSE_GESTURE_COOLDOWN = 2 # Seconden cooldown om herhaalde triggers te voorkomen
+PAUSE_GESTURE_THRESHOLD_X_RIGHT = 100 
+PAUSE_GESTURE_COOLDOWN = 2 
 
 def init_state():
     defaults = {
@@ -95,17 +137,18 @@ def init_state():
         'phase_start': None,
         'img_shape': None,
         'score_log': {},
-        'feedback_history': [],
-        'feedback_triggered': [],
-        'current_scores': [],
+        'feedback_history': [], # Re-enabled
+        'feedback_triggered': [], # Re-enabled
+        'current_scores': [], # Will now store (time, score) tuples
         'tts_test_done': False,
-        'tts_hold_test_done': False,
+        # 'tts_hold_test_done': False, # This was removed in previous versions and is not needed for current logic
         'prev_step': None,
         'cap': None,
         'paused': False,
         'pause_start_time': None,
         're_render_pose_image': False,
-        'last_pause_gesture_time': 0 # Nieuwe variabele voor cooldown
+        'last_pause_gesture_time': 0, 
+        'tts_audio_placeholder': None 
     }
     for key, val in defaults.items():
         if key not in st.session_state:
@@ -122,22 +165,23 @@ apply_styles()
 
 def toggle_pause():
     current_time = time.time()
-    # Controleer of de cooldown voorbij is
     if current_time - st.session_state.last_pause_gesture_time > PAUSE_GESTURE_COOLDOWN:
         st.session_state.paused = not st.session_state.paused
         if st.session_state.paused:
             st.session_state.pause_start_time = time.time()
+            play_tts("Routine gepauzeerd. Beweeg je hand naar rechts om te hervatten.") 
         else:
             if st.session_state.pause_start_time is not None:
                 paused_duration = time.time() - st.session_state.pause_start_time
-                # Pas de phase_start aan om de gepauzeerde tijd te compenseren
                 st.session_state.phase_start += paused_duration
                 st.session_state.pause_start_time = None
-                st.session_state.re_render_pose_image = True # Forceer herrender van de pose afbeelding
-                if st.session_state.phase == 'hold': # Reset feedback triggers alleen als we in de 'hold' fase waren
-                    st.session_state.feedback_triggered = []
-        st.session_state.last_pause_gesture_time = current_time # Update de laatste trigger tijd
-        st.rerun() # Forceer een herrender om de pauze direct te tonen
+                st.session_state.re_render_pose_image = True 
+                # Re-add feedback reset on resume for 'hold' phase only
+                if st.session_state.phase == 'hold': 
+                    st.session_state.feedback_triggered = [] 
+                play_tts("Routine hervat.") 
+        st.session_state.last_pause_gesture_time = current_time 
+        st.rerun() 
 
 def on_select(fn):
     print(f"[LOG] on_select wordt aangeroepen met bestand: {fn}")
@@ -151,13 +195,13 @@ def on_select(fn):
     st.session_state.phase = 'camera_check'
     st.session_state.phase_start = time.time()
     st.session_state.score_log = {}
-    st.session_state.feedback_history = []
-    st.session_state.feedback_triggered = []
+    st.session_state.feedback_history = [] # Re-enabled
+    st.session_state.feedback_triggered = [] # Re-enabled
     st.session_state.current_scores = []
     st.session_state.paused = False
     st.session_state.pause_start_time = None
     st.session_state.re_render_pose_image = False
-    st.session_state.last_pause_gesture_time = 0 # Reset bij nieuwe routine
+    st.session_state.last_pause_gesture_time = 0 
 
     if st.session_state.cap is None or not st.session_state.cap.isOpened():
         cap = cv2.VideoCapture(0)
@@ -173,26 +217,34 @@ def on_select(fn):
 if not st.session_state.running:
     render_selection_screen(on_select)
 
-# Bovenste rij voor knoppen en titel
 top_cols = st.columns([1, 4, 1])
-with top_cols[0]: # This column will now contain the Stop button
+with top_cols[0]: 
     if st.session_state.running:
         if st.button("⏹️ Stop Routine"):
             st.session_state.running = False
-            st.session_state.cap.release()
+            if st.session_state.cap is not None and st.session_state.cap.isOpened():
+                st.session_state.cap.release()
             st.session_state.cap = None
             st.rerun()
-with top_cols[2]: # This column will now contain the Pause/Resume button
+with top_cols[2]: 
     if st.session_state.running:
         if st.button("⏯️ Pauze / Hervat"):
-            toggle_pause() # Gebruik de nieuwe toggle_pause functie
+            toggle_pause() 
 
 pose_ph, frame_ph, title_ph, metrics_ph, timer_ph, feedback_ph = create_main_layout(top_cols[1])
-VISUAL_FEEDBACK_ENABLED = True
+
+if 'tts_audio_placeholder' not in st.session_state or st.session_state.tts_audio_placeholder is None:
+    st.session_state.tts_audio_placeholder = st.empty()
+
+
+# Re-enable VISUAL_FEEDBACK_ENABLED (if not already defined as a global, it will default to True here)
+# For clarity, let's explicitly define it if it was removed
+VISUAL_FEEDBACK_ENABLED = True 
+
 
 if st.session_state.running:
     while st.session_state.running:
-        t0 = time.time() # Start timer here for full loop duration
+        t0 = time.time() 
 
         ret, frame = st.session_state.cap.read()
         if not ret:
@@ -201,7 +253,6 @@ if st.session_state.running:
             break
         frame = cv2.flip(frame, 1)
 
-        # Haal de afmetingen van het frame op voor de drempelberekening (ongewijzigd)
         frame_h, frame_w = frame.shape[:2]
 
         if st.session_state.img_shape:
@@ -223,12 +274,7 @@ if st.session_state.running:
         annotated_frame = frame.copy()
         score = None
         
-        # Roep render_skeleton_frame aan en ontvang hand_keypoints (altijd uitvoeren)
-        # We geven de pose_model data alleen door als we in de 'hold' fase zijn, anders een lege dict.
-        # Dit is omdat de 'full' mode van render_skeleton_frame hoort bij de pose-vergelijking.
-        # Voor 'prepare' en 'transition' is alleen de 'landmarks' mode voldoende (skelet zonder score).
         current_pose_model = {}
-        # Ensure that st.session_state.current_step is valid before accessing poses list
         if st.session_state.current_step < len(st.session_state.poses) and st.session_state.phase == 'hold':
             current_pose_model = st.session_state.pose_models.get(f"{st.session_state.poses[st.session_state.current_step]['pose']}.json", {})
 
@@ -238,18 +284,18 @@ if st.session_state.running:
             mode='full' if st.session_state.phase == 'hold' else 'landmarks'
         )
 
-        # Controleer op pauzegebaar aan de rechterkant van het scherm
-        if st.session_state.phase != 'camera_check': # Alleen actief na de camera check
+        if st.session_state.phase != 'camera_check': 
             for h_kp_x, h_kp_y in hand_keypoints:
-                # Als een handkeypoint zich aan de rechterkant van het frame bevindt
                 if h_kp_x > (frame_w - PAUSE_GESTURE_THRESHOLD_X_RIGHT):
                     toggle_pause()
-                    # Zodra de pauze is getriggerd, doorbreek de lus om te voorkomen dat er meer dan eens gepauzeerd wordt.
                     break 
         
-        # Logica die alleen draait als de routine NIET gepauzeerd is
         if not st.session_state.paused:
             idx       = st.session_state.current_step
+            if idx >= len(st.session_state.poses):
+                st.session_state.running = False
+                continue 
+
             step      = st.session_state.poses[idx]
             pose_name = step['pose']
             now       = time.time()
@@ -286,7 +332,7 @@ if st.session_state.running:
                     metrics_ph.empty()
                     continue
 
-            else: # Phases: 'prepare', 'hold', 'transition'
+            else: 
                 if st.session_state.prev_step != idx or st.session_state.re_render_pose_image:
                     title_ph.header(f"🧘‍♀️ {pose_name}")
                     pose_ph.markdown(f"📌 **Model pose:** {pose_name}")
@@ -302,7 +348,12 @@ if st.session_state.running:
                         pose_ph.empty()
                     
                     if idx == 0 and step.get('prep_time', 5) > 0 and st.session_state.phase == 'prepare':
-                        feedback_ph.markdown(f"ℹ️ {st.session_state.routine_meta.get('description','')} ")
+                        feedback_ph.markdown(f"ℹ️ {st.session_state.routine_meta.get('description','')}")
+                    # Keep feedback_ph populated with last LLM feedback during prep if available
+                    elif VISUAL_FEEDBACK_ENABLED and st.session_state.feedback_history:
+                        feedback_ph.markdown(st.session_state.feedback_history[-1])
+                    else:
+                        feedback_ph.empty() 
                     
                     st.session_state.prev_step = idx
                     st.session_state.re_render_pose_image = False
@@ -312,10 +363,10 @@ if st.session_state.running:
                     if elapsed >= prep_time:
                         st.session_state.phase = 'hold'
                         st.session_state.phase_start = now
-                        st.session_state.feedback_history = []
-                        st.session_state.feedback_triggered = []
-                        st.session_state.current_scores = []
-                        st.session_state.tts_hold_test_done = False
+                        st.session_state.feedback_history = [] # Re-enabled reset
+                        st.session_state.feedback_triggered = [] # Re-enabled reset
+                        st.session_state.current_scores = [] 
+                        play_tts(f"Start met {pose_name}.") 
                         continue
                     else:
                         timer_ph.markdown(f"⏳ Voorbereiding: {int(prep_time - elapsed)} s")
@@ -324,9 +375,9 @@ if st.session_state.running:
                     hold_time = step.get('hold_time', 30)
                     
                     if score is not None:
-                        st.session_state.current_scores.append(score)
+                        st.session_state.current_scores.append((elapsed, score)) # Store (time, score) pair
 
-                    if VISUAL_FEEDBACK_ENABLED:
+                    if VISUAL_FEEDBACK_ENABLED: # Re-enabled LLM feedback logic during hold
                         thresholds = [(i+1) * hold_time / FEEDBACK_COUNT for i in range(FEEDBACK_COUNT)]
                         for it, thr in enumerate(thresholds):
                             if elapsed >= thr and it not in st.session_state.feedback_triggered:
@@ -338,7 +389,7 @@ if st.session_state.running:
                                     feedback_queue.put(tip_full)
 
                                 avg_s = (
-                                    sum(st.session_state.current_scores)
+                                    sum(s for t, s in st.session_state.current_scores) # Adjusted for (time, score) tuples
                                     / len(st.session_state.current_scores)
                                     if st.session_state.current_scores
                                     else 0
@@ -350,13 +401,15 @@ if st.session_state.running:
                                 ).start()
                                 break
 
-                    if not feedback_queue.empty():
+                    if not feedback_queue.empty(): # Re-enabled
                         new_tip = feedback_queue.get()
                         st.session_state.feedback_history = [f"💡 {new_tip}"]
                         play_tts(new_tip)
 
-                    if VISUAL_FEEDBACK_ENABLED and st.session_state.feedback_history:
+                    if VISUAL_FEEDBACK_ENABLED and st.session_state.feedback_history: # Re-enabled
                         feedback_ph.markdown(st.session_state.feedback_history[-1])
+                    else:
+                        feedback_ph.empty() # Clear if no feedback or feedback not enabled
 
                     timer_ph.markdown(f"⏳ Houd vast: {int(hold_time - elapsed)} s")
                     if elapsed >= hold_time:
@@ -367,18 +420,20 @@ if st.session_state.running:
 
                         st.session_state.phase = 'transition'
                         st.session_state.phase_start = now
+                        play_tts(f"Goed gedaan. {step.get('transition', 'Volgende pose.')}") 
                         continue
 
                 elif st.session_state.phase == 'transition':
                     transition_time = step.get('transition_time', 3)
                     if elapsed >= transition_time:
                         feedback_ph.markdown(f"🔄 {step.get('transition', '')}")
-                        st.session_state.feedback_history = []
-                        st.session_state.feedback_triggered = []
-                        st.session_state.current_scores = []
+                        st.session_state.feedback_history = [] # Re-enabled reset
+                        st.session_state.feedback_triggered = [] # Re-enabled reset
+                        st.session_state.current_scores = [] 
                         st.session_state.current_step += 1
                         if st.session_state.current_step >= len(st.session_state.poses):
                             st.session_state.running = False
+                            play_tts("Routine voltooid! Goed gedaan!") 
                             break
                         st.session_state.phase = 'prepare'
                         st.session_state.phase_start = time.time()
@@ -387,7 +442,6 @@ if st.session_state.running:
                     else:
                         timer_ph.markdown(f"⏳ Volgende pose over: {int(transition_time - elapsed)} s")
             
-            # Display score on frame if not paused
             if score is not None:
                 txt = f"{score:.1f}%"
                 (wt, ht), _ = cv2.getTextSize(txt, cv2.FONT_HERSHEY_SIMPLEX, 1.5, 2)
@@ -404,22 +458,19 @@ if st.session_state.running:
                     2
                 )
             
-            # Update metrics (only if not paused)
             t1 = time.time()
             fps = 1/(t1-t0) if t1>t0 else 0
             metrics_ph.markdown(f"**Proc:** {(t1-t0)*1000:.0f} ms — **{fps:.1f} fps**")
 
-        else: # If paused, update UI elements to reflect pause state
+        else: 
             title_ph.header("⏸️ Routine Gepauzeerd")
-            timer_ph.markdown("---") # Clear timer
-            metrics_ph.markdown("---") # Clear metrics
-            feedback_ph.markdown("👋 Beweeg je hand naar de rechterkant van het scherm om te hervatten") # Specific pause message
-            time.sleep(0.1) # Prevent busy-waiting, but still allows camera to update
+            timer_ph.markdown("---") 
+            metrics_ph.markdown("---") 
+            feedback_ph.markdown("👋 Beweeg je hand naar de rechterkant van het scherm om te hervatten") 
+            time.sleep(0.1) 
         
-        # Display the camera frame (always, whether paused or not)
         frame_ph.image(annotated_frame, channels='BGR', use_container_width=True)
         
-# --- START: Schoonmaken van de live-weergave na routine ---
 pose_ph.empty()
 frame_ph.empty()
 title_ph.empty()
@@ -427,17 +478,19 @@ metrics_ph.empty()
 timer_ph.empty()
 feedback_ph.empty()
 
-if st.session_state.cap is not None:
-    _ = st.session_state.cap.release()
-    st.session_state.cap = None
-# --- EINDE: Schoonmaken van de live-weergave na routine ---
+if st.session_state.get('tts_audio_placeholder') is not None:
+    st.session_state.tts_audio_placeholder.empty()
 
-# Eindreview
+if st.session_state.cap is not None:
+    if st.session_state.cap.isOpened(): 
+        _ = st.session_state.cap.release()
+    st.session_state.cap = None
+
 if st.session_state.score_log:
     st.header("✨ Jouw Routine Overzicht ✨")
     for pn, scores_for_pose_attempts in st.session_state.score_log.items():
-        for i, attempt_scores in enumerate(scores_for_pose_attempts):
-            img_col, plot_col = st.columns([1,1])
+        for i, attempt_scores_with_time in enumerate(scores_for_pose_attempts): 
+            img_col, plot_col = st.columns([1,1]) 
             with img_col:
                 tp = os.path.join(IMAGE_DIR, f"{pn}.jpg")
                 if os.path.isfile(tp):
@@ -445,24 +498,28 @@ if st.session_state.score_log:
                 else:
                     st.markdown(f"Model afbeelding voor **{pn}** niet gevonden.")
             with plot_col:
-                avg = sum(attempt_scores)/len(attempt_scores) if attempt_scores else 0
-                top = max(attempt_scores) if attempt_scores else 0
+                actual_scores = [s for t, s in attempt_scores_with_time]
+                avg = sum(actual_scores)/len(actual_scores) if actual_scores else 0
+                top = max(actual_scores) if actual_scores else 0
                 
                 st.markdown(f"## {pn} (Poging {i+1})")
                 st.markdown(f"<p style='font-size:1.2em; color:gray;'>Today</p>", unsafe_allow_html=True)
                 st.markdown(f"<p style='font-size:1.5em; color:#00D09B; margin-bottom: 0.1em;'>Average Score <span style='float:right; font-weight:bold;'>{avg:.0f}%</span></p>", unsafe_allow_html=True)
                 st.markdown(f"<p style='font-size:1.5em; color:#00D09B;'>High Score <span style='float:right; font-weight:bold;'>{top:.0f}%</span></p>", unsafe_allow_html=True)
                 
-                if attempt_scores:
-                    fig, ax = plt.subplots(figsize=(8, 4))
+                if actual_scores:
+                    fig, ax = plt.subplots(figsize=(8, 5)) 
                     
-                    ax.plot(attempt_scores, color='#00D09B', linewidth=2)
+                    times_for_plot = [t for t, s in attempt_scores_with_time]
+                    scores_for_plot = [s for t, s in attempt_scores_with_time]
+
+                    ax.plot(times_for_plot, scores_for_plot, color='#00D09B', linewidth=2)
                     
                     ax.set_facecolor('#F8F8F8')
                     ax.grid(False)
                     ax.set_ylim(0, 100)
                     ax.set_ylabel("Score (%)")
-                    ax.set_xlabel("Meting (frames)")
+                    ax.set_xlabel("Tijd (seconden)") 
                     
                     ax.axhline(y=70, color='#E0E0E0', linestyle='-', linewidth=1)
                     ax.axhline(y=80, color='#E0E0E0', linestyle='-', linewidth=1)
@@ -478,8 +535,9 @@ if st.session_state.score_log:
                 else:
                     st.write("Geen scoregegevens beschikbaar voor deze poging.")
 
+                # LLM Feedback re-enabled
                 feedback = get_summary_feedback(pn, avg)
-                st.info(feedback)
+                st.info(feedback) 
             st.markdown("---")
 
 if st.button("⇦ Kies een andere routine"):
