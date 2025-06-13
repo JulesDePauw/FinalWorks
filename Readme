@@ -1,0 +1,23 @@
+App is develloped on Mac os and uses Apples Native voice commands.Because of this it might not run on Windows. 
+
+Installeer Python (3.11 of recenter)
+Installeer Ollama + llama3.2
+Open in code editor
+Open terminal in de reposetory root
+Run deze commands in de terminal
+python3.11 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install mediapipe opencv-python
+numpy streamlit openai pyttsx3
+streamlit run app.py
+Om de app te stoppen moet je
+‘Control’+ ‘c’ drukken in de terminal.
+
+app.py = Main application 
+compare_pose_streamlit = Main Logic 
+ui = Styling 
+
+extract_landmarks = Code to add own dataset. Simply move named files in "modelposes" and run script (you need to make your own routines manually)
+visualize_modelpose = Script to see if joints are on the right location ( use ‘q’ and ‘d’ key to go throug immages, press ‘esc’ to exit)
+
