@@ -39,16 +39,7 @@ ANGLE_DEFINITIONS = {
 mp_pose = mp.solutions.pose
 pose    = mp_pose.Pose(
     static_image_mode=False,
-    model_complexity=0, # Changed from 1 to 0 for potentially faster processing
-    min_detection_confidence=0.5,
-    min_tracking_confidence=0.5
-)
-
-# Initialize MediaPipe Hands
-mp_hands = mp.solutions.hands
-hands    = mp_hands.Hands(
-    static_image_mode=False,
-    max_num_hands=2,
+    model_complexity=0,
     min_detection_confidence=0.5,
     min_tracking_confidence=0.5
 )
@@ -75,8 +66,7 @@ def gradient_color(norm):
     return (0, g, r)
 
 def midpoint(p1, p2):
-    # Corrected line: create a tuple of two integers
-    return (int((p1[0] + p2[0]) / 2), int((p1[1] + p2[1]) / 2))
+    return tuple(int((p1[i] + p2[i]) / 2) for i in range(2))
 
 def draw_gradient_line(img, pt1, pt2, color1, color2, segments=LINE_SEGMENTS, thickness=LINE_THICKNESS):
     for i in range(segments):
@@ -90,44 +80,27 @@ def draw_gradient_line(img, pt1, pt2, color1, color2, segments=LINE_SEGMENTS, th
         cv2.line(img, (x1, y1), (x2, y2), c, thickness)
 
 # === Core skeleton rendering ===
-# Aangepaste functie om ook hand keypoints terug te geven
 def render_skeleton_frame(frame, model_json, mode="full"):
     global frame_counter, last_render, last_score, last_heavy
     now = time.time()
     if last_render is not None and (now - last_heavy) < 0.05:
-        return last_render, last_score, [] # Voeg een lege lijst toe voor hand keypoints als we overslaan
+        return last_render, last_score
     last_heavy = now
     frame_counter += 1
 
     h, w = frame.shape[:2]
     small = cv2.resize(frame, (320, 240))
     rgb_small = cv2.cvtColor(small, cv2.COLOR_BGR2RGB)
-
-    # Process pose
-    pose_results = pose.process(rgb_small)
-    # Process hands
-    hand_results = hands.process(rgb_small)
-
+    results = pose.process(rgb_small)
     h_ratio, w_ratio = h / 240, w / 320
 
     # 1) Verzamel alle gedetecteerde keypoints in volledige resolutie
     pose_px = {}
-    if pose_results.pose_landmarks:
-        for i, lm in enumerate(pose_results.pose_landmarks.landmark):
+    if results.pose_landmarks:
+        for i, lm in enumerate(results.pose_landmarks.landmark):
             x_full = int(lm.x * 320 * w_ratio)
             y_full = int(lm.y * 240 * h_ratio)
             pose_px[i] = (x_full, y_full)
-
-    # Verzamel hand keypoints
-    hand_keypoints = []
-    if hand_results.multi_hand_landmarks:
-        for hand_landmarks in hand_results.multi_hand_landmarks:
-            for i, lm in enumerate(hand_landmarks.landmark):
-                x_full = int(lm.x * 320 * w_ratio)
-                y_full = int(lm.y * 240 * h_ratio)
-                hand_keypoints.append((x_full, y_full))
-                # Optioneel: Teken hand keypoints voor debuggen
-                # cv2.circle(frame, (x_full, y_full), 5, (255, 0, 0), -1)
 
     # 2) Bereken virtuele joints
     virtual_joints = {}
@@ -169,11 +142,16 @@ def render_skeleton_frame(frame, model_json, mode="full"):
             mid_sh_x = int((left_sh[0] + right_sh[0]) / 2)
             head_x   = head_pt[0]
             diff_px  = abs(head_x - mid_sh_x)
+            # Debug
+         #  print(f"[DEBUG] head_x = {head_x}, mid_sh_x = {mid_sh_x}, diff_px = {diff_px}")
             if diff_px <= HEAD_ALIGN_EPSILON:
+                # Perfect horizontale uitlijning: groen
                 color_h = EXACT_MATCH_COLOR
             elif diff_px <= 2 * HEAD_ALIGN_EPSILON:
+                # Kleine afwijking: geel
                 color_h = DEVIATION_COLOR
             else:
+                # Grote afwijking: rood
                 color_h = (0, 0, 255)
         else:
             color_h = MISSING_COLOR
@@ -216,4 +194,31 @@ def render_skeleton_frame(frame, model_json, mode="full"):
         score = 0 if np.isnan(pct) else max(0, int(pct))
 
     last_render, last_score = frame, score
-    return last_render, last_score, hand_keypoints # Return hand_keypoints
+    return last_render, last_score
+
+# === Feedback loop ===
+def run_streamlit_feedback(modelpath, frame_ph, hold_time=30, feedback_text_area=None, timer_area=None):
+    with open(modelpath) as f:
+        model_json = json.load(f)
+    cap = cv2.VideoCapture(0)
+    start = time.time(); scores = []
+    while True:
+        elapsed = time.time() - start
+        if elapsed >= hold_time:
+            break
+        ret, frame = cap.read()
+        if not ret:
+            break
+        frame = cv2.flip(frame, 1)
+        annotated, score = render_skeleton_frame(frame.copy(), model_json, mode='full')
+        scores.append(score or 0)
+        frame_ph.image(annotated, channels='BGR', use_container_width=True)
+        if timer_area:
+            timer_area.markdown(f"⏳ {int(hold_time - elapsed)} s")
+        time.sleep(0.03)
+    cap.release()
+    avg_score = sum(scores) / len(scores) if scores else 0
+    feedback = f"Je gemiddeldescore was {avg_score:.1f}%"
+    if feedback_text_area:
+        feedback_text_area.markdown(f"**Feedback:** {feedback}")
+    return avg_score
